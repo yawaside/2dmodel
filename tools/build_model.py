@@ -76,10 +76,20 @@ CFG = dict(
     angle_z_keys=(-30.0, 0.0, 30.0),
     body_range=(-10.0, 10.0),
     body_keys=(-10.0, 0.0, 10.0),
-    eye_open_keys=(0.0, 0.3, 0.7, 1.0),
-    mouth_keys=(0.0, 0.2, 0.4, 0.6, 0.8, 1.0),
-    mouth_form_keys=(-1.0, 0.0, 1.0),
-    eye_smile_keys=(0.0, 0.5, 1.0),
+    # keys aligned to the blending breakpoints of eye_blend()/mouth_blend()
+    # (0.2/0.5/0.85 and 0.15/0.35/0.55/0.8). The pairs like 0.14/0.15 sit
+    # right before a breakpoint: there the bottom layer of the stack passes
+    # the baton to the next one, and a key added just before the hand-over
+    # keeps the stack coverage at ~1 between keys (no base leaks through,
+    # which used to read as a flickering square around the blocks).
+    eye_open_keys=(0.0, 0.02, 0.1, 0.2, 0.25, 0.5, 1.0),
+    # mouth: keys sit on the hold/window boundaries (0.12 / 0.2 / 0.38 /
+    # 0.47 / 0.66 / 0.76) plus one key right before each hand-over (0.19 /
+    # 0.46 / 0.75) where the bottom layer passes the baton - keeps base
+    # leak ~0 between keys
+    mouth_keys=(0.0, 0.12, 0.19, 0.2, 0.38, 0.46, 0.47, 0.66, 0.75, 0.76, 1.0),
+    mouth_form_keys=(-1.0, -0.9, -0.5, 0.0, 0.5, 0.9, 1.0),
+    eye_smile_keys=(0.0, 0.5, 0.9, 1.0),
 )
 
 
@@ -203,110 +213,129 @@ def box_rows_cols(rect, step):
 # vowel / expression blending
 # --------------------------------------------------------------------------- #
 
+def stack_opa(weights, k):
+    """Opacity of layer `k` in a bottom-up alpha stack.
+
+    The layers are drawn in index order (0 = bottom).  With this formula the
+    composited result is exactly ``sum(w[i] * C_i)`` at every keyform state:
+    the layer underneath is fully opaque while it is active, so the head art
+    below never leaks into the block - a leak used to show the flat patch
+    under the face as a flickering square around the eyes/mouth.
+    """
+    cum = 0.0
+    for j in range(k + 1):
+        cum += weights[j]
+    if cum <= 1e-6:
+        return 0.0
+    return clamp(weights[k] / cum, 0.0, 1.0)
+
+
 def mouth_blend(open_y, form):
-    """Return weights for 8 mouth shapes using open (0-1) and form (-1=smirk, 0=neutral, 1=smile).
+    """Return weights for 6 mouth shapes using open (0-1) and form (-1=smirk, 0=neutral, 1=smile).
+
     Shape order (matches rig):
         0: closed
         1: slight
         2: half
         3: A (wide open)
-        4: O (rounded)
-        5: I (grin)
-        6: smile (wide happy)
-        7: smirk
+        4: smile (I-grin)
+        5: smirk
+
+    Fewer frames than before (the O and open-grin steps are gone): the mouth
+    opens as ONE monotonic chain closed -> slight -> half -> A, always with
+    at most two shapes mixed, so lip-sync reads as a smooth continuous
+    opening instead of cycling through several drawn mouths.
     """
-    w = [0.0]*8
+    w = [0.0] * 6
     o = clamp(open_y, 0.0, 1.0)
     f = clamp(form, -1.0, 1.0)
 
-    # base vowel blend from open value, perfectly mapped to Japanese/English vowels for VTS lip-sync
-    if o < 0.15:
-        w[0] = 1.0 - o/0.15
-        w[1] = o/0.15
-    elif o < 0.35:
-        t = (o - 0.15)/0.2
-        w[1] = 1.0 - t
+    # openness: LONG holds with SHORT pair crossfades. Most of the parameter
+    # range shows exactly ONE drawn mouth, so the previous frame visibly
+    # disappears during the brief transition instead of hanging around the
+    # new, bigger one. Still piecewise-linear (knots + a key right before
+    # each hand-over), so the stored keyform opacities stay exact.
+    if o <= 0.12:
+        w[0] = 1.0                                  # closed hold
+    elif o <= 0.20:
+        t = (o - 0.12) / 0.08
+        w[0] = 1.0 - t                              # closed -> slight
+        w[1] = t
+    elif o < 0.38:
+        w[1] = 1.0                                  # slight hold
+    elif o <= 0.47:
+        t = (o - 0.38) / 0.09
+        w[1] = 1.0 - t                              # slight -> half
         w[2] = t
-    elif o < 0.55:
-        t = (o - 0.35)/0.2
-        w[2] = 1.0 - t
-        w[4] = t*0.4  # start O
-        w[3] = t*0.6  # start A
-    elif o < 0.8:
-        t = (o - 0.55)/0.25
-        w[3] = 1.0 - t*0.3
-        w[5] = t*0.2  # I starts appearing at louder volumes
-        w[4] = 0.4*(1.0 - t)
+    elif o < 0.66:
+        w[2] = 1.0                                  # half hold
+    elif o <= 0.76:
+        t = (o - 0.66) / 0.10
+        w[2] = 1.0 - t                              # half -> A
+        w[3] = t
     else:
-        t = (o - 0.8)/0.2
-        w[3] = 0.7*(1.0 - t)
-        w[5] = 0.3 + 0.7*t
+        w[3] = 1.0                                  # A hold (fully open)
 
-    # apply form: smile/smirk mix
+    # form: a plain crossfade of the whole chain to smile / smirk
     if f > 0.0:
-        # smile -> blend in shape 5 (I grin) and 6
-        smile_str = f
-        for i in range(6):
-            w[i] *= (1.0 - smile_str*0.7)
-        w[5] += smile_str*0.6
-        w[6] += smile_str*0.4
+        for i in range(4):
+            w[i] *= (1.0 - f)
+        w[4] = f
     elif f < 0.0:
-        # smirk -> blend in shape 7
-        smirk_str = -f
-        for i in range(6):
-            w[i] *= (1.0 - smirk_str*0.8)
-        w[7] += smirk_str
+        k = -f
+        for i in range(4):
+            w[i] *= (1.0 - k)
+        w[5] = k
 
-    # normalize
+    # normalize (keeps the sum at 1 for the stack compositor)
     total = sum(w)
     if total > 0:
-        w = [x/total for x in w]
+        w = [x / total for x in w]
     else:
         w[0] = 1.0
     return w
 
 
 def eye_blend(open_val, smile_val):
-    """Return weights for eye variants: neutral, wide, half, blink, happy, squint."""
-    w = [0.0]*6
+    """Return weights for the 5 eye frames: neutral, half, blink, happy, squint.
+
+    The old "wide" frame is gone on purpose: at full openness the model now
+    shows the neutral (middle) drawing, which keeps the calm resting look,
+    and there is one less state to cross-fade through while blinking.
+
+    Indices match variant_names in build().
+    """
+    w = [0.0] * 5
     o = clamp(open_val, 0.0, 1.0)
     s = clamp(smile_val, 0.0, 1.0)
 
-    # base open/close blend
+    # openness: blink -> half -> neutral, at most two frames at once
     if o < 0.2:
-        w[3] = 1.0 - o/0.2  # blink
-        w[2] = o/0.2
+        w[2] = 1.0 - o / 0.2     # blink
+        w[1] = o / 0.2           # half
     elif o < 0.5:
-        t = (o - 0.2)/0.3
-        w[2] = 1.0 - t  # half
-        w[0] = t
-    elif o > 0.85:
-        t = (o - 0.85)/0.15
-        w[0] = 1.0 - t  # neutral
-        w[1] = t        # wide
+        t = (o - 0.2) / 0.3
+        w[1] = 1.0 - t           # half
+        w[0] = t                 # neutral
     else:
-        w[0] = 1.0
+        w[0] = 1.0               # neutral all the way to fully open
 
-    # smile -> happy/squint
+    # smile -> happy / squint; hands the whole weight over at s=1 so no
+    # ghost of the open eye stays underneath the drawn happy arc
     if s > 0.0:
-        happy = s
-        squint = s * max(0.0, 1.0 - o)  # squint more when smiling with mouth open
-        for i in range(4):
-            w[i] *= (1.0 - happy*0.8)
-        w[4] += happy*0.7
-        w[5] += squint*0.3
+        squint = s * max(0.0, 1.0 - o)
+        for i in range(3):
+            w[i] *= (1.0 - s)
+        w[3] += s
+        w[4] += squint * 0.3
 
     total = sum(w)
     if total > 0:
-        w = [x/total for x in w]
+        w = [x / total for x in w]
     else:
         w[0] = 1.0
     return w
 
-
-# --------------------------------------------------------------------------- #
-# build
-# --------------------------------------------------------------------------- #
 
 def build(geom_path, meta_path, atlas_path, outdir, cfg=CFG):
     os.makedirs(outdir, exist_ok=True)
@@ -361,7 +390,7 @@ def build(geom_path, meta_path, atlas_path, outdir, cfg=CFG):
         # Precompute UVs for all variants
         variants = e["variants"]
         uvs = {}
-        variant_names = ["neutral", "wide", "half", "blink", "happy", "squint"]
+        variant_names = ["neutral", "half", "blink", "happy", "squint"]
         for vname in variant_names:
             key = f"eye_{i}_{vname}"
             rx0, ry0, rx1, ry1 = meta["placed"][key]["rect"]
@@ -375,7 +404,7 @@ def build(geom_path, meta_path, atlas_path, outdir, cfg=CFG):
     mbox = tuple(meta["mouth_box"])
     mx0, my0, mx1, my1 = mbox
     mw, mh = mx1 - mx0, my1 - my0
-    mrows, mcols = 8, 8
+    mrows, mcols = box_rows_cols(mbox, 20)
     mv, mt = box_mesh(mbox, mrows, mcols)
     n_mouth = meta["mouth_frame_count"]
     muvs = []
@@ -463,11 +492,11 @@ def build(geom_path, meta_path, atlas_path, outdir, cfg=CFG):
             o = st.get("ParamMouthOpenY", 0.0)
             form = st.get("ParamMouthForm", 0.0)
             w = mouth_blend(o, form)
-            return w[i]
+            return stack_opa(w, i)
         return f
 
-    # First, add neutral closed mouth on base already has mouth, so start from index 1? No - actually base has closed mouth,
-    # we add all mouth shapes OVER base, alpha blended. Closed mouth matches base exactly so no seam.
+    # All mouth frames are opaque crops of the face; stack_opa() makes the
+    # stack composite to exactly mouth_blend() - no ghosting of the base art.
     for i in range(n_mouth):
         b.add_art_mesh(id=f"Mouth{i}", verts=[head_local(*p) for p in mv],
                        uvs=muvs[i], tris=mt, draw_order=300 + i,
@@ -477,7 +506,7 @@ def build(geom_path, meta_path, atlas_path, outdir, cfg=CFG):
 
     # ---- eyes: each eye is a single drawable that switches UVs per variant, alpha blended
     # Actually moc3 doesn't support UV animation in this writer, so use same approach as mouth: one drawable per variant, alpha blended.
-    variant_names = ["neutral", "wide", "half", "blink", "happy", "squint"]
+    variant_names = ["neutral", "half", "blink", "happy", "squint"]
     for i, em in enumerate(eye_meshes):
         open_pid = "ParamEyeLOpen" if i == 0 else "ParamEyeROpen"
         smile_pid = "ParamEyeSmileL" if i == 0 else "ParamEyeSmileR"
@@ -491,7 +520,7 @@ def build(geom_path, meta_path, atlas_path, outdir, cfg=CFG):
                 s_nat = s + max(0.0, ay / 30.0) * 0.3
                 s_nat = clamp(s_nat, 0.0, 1.0)
                 w = eye_blend(o, s_nat)
-                return w[idx]
+                return stack_opa(w, idx)
             return f
 
         for vi, vname in enumerate(variant_names):
@@ -603,15 +632,17 @@ def build(geom_path, meta_path, atlas_path, outdir, cfg=CFG):
                 "Input": [
                     {"Source": {"Target": "Parameter", "Id": "ParamAngleY"},
                      "Weight": 50, "Type": "X", "Reflect": False},
+                    # weaker lip-sync -> eye-smile coupling: the mouth already
+                    # animates a lot, the eyes should only give a light echo
                     {"Source": {"Target": "Parameter", "Id": "ParamMouthForm"},
-                     "Weight": 40, "Type": "X", "Reflect": False},
+                     "Weight": 15, "Type": "X", "Reflect": False},
                 ],
                 "Output": [
                     {"Destination": {"Target": "Parameter", "Id": "ParamEyeSmileL"},
-                     "VertexIndex": 1, "Scale": 0.4, "Weight": 70,
+                     "VertexIndex": 1, "Scale": 0.4, "Weight": 55,
                      "Type": "Angle", "Reflect": False},
                     {"Destination": {"Target": "Parameter", "Id": "ParamEyeSmileR"},
-                     "VertexIndex": 1, "Scale": 0.4, "Weight": 70,
+                     "VertexIndex": 1, "Scale": 0.4, "Weight": 55,
                      "Type": "Angle", "Reflect": False},
                 ],
                 "Vertices": [
@@ -631,7 +662,7 @@ def build(geom_path, meta_path, atlas_path, outdir, cfg=CFG):
                 "Input": [{"Source": {"Target": "Parameter", "Id": "ParamMouthOpenY"},
                            "Weight": 100, "Type": "X", "Reflect": False}],
                 "Output": [{"Destination": {"Target": "Parameter", "Id": "ParamMouthForm"},
-                            "VertexIndex": 1, "Scale": 0.2, "Weight": 50,
+                            "VertexIndex": 1, "Scale": 0.12, "Weight": 35,
                             "Type": "Angle", "Reflect": False}],
                 "Vertices": [
                     {"Position": {"X": 0, "Y": 0}, "Mobility": 1, "Delay": 0.05,

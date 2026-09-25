@@ -307,21 +307,186 @@ def crop_nontransparent(arr):
 
 def build_texture(src_png: str, out_png: str, meta_json: str, geom: dict,
                   cfg: dict) -> dict:
+    """Build the expression atlas.
+
+    Stage-1 fixes (eyes / mouth):
+      * the base art is NOT inpainted anymore - a flat patch under the face
+        used to leak through the blended stack and read as a flickering
+        square around the eyes and the mouth;
+      * every variant tile is composited over the neutral crop, so all tiles
+        are opaque: the stack never reveals whatever lies underneath;
+      * boxes are grown to the full hand-drawn art (brows, lips) with a
+        margin, so no stroke is ever cut by the mesh edge, and the eye band
+        stops exactly where the mouth band starts (the open mouth's upper
+        lip used to be covered by the eye tiles);
+      * tile edges are replicated a few pixels into the atlas gaps, so
+        bilinear filtering in the engine cannot sample the transparent
+        gap and draw a dark seam around the blocks.
+    """
     src = Image.open(src_png).convert("RGBA")
     W, H = src.size
     rgba = np.array(src).astype(np.float32)
     alpha = rgba[..., 3] > 128
     lum = 0.299 * rgba[..., 0] + 0.587 * rgba[..., 1] + 0.114 * rgba[..., 2]
 
-    # ----- eyes ----------------------------------------------------------- #
-    # Use hand-drawn PSD layers for all eye states instead of procedural deformation.
-    # Layers in psd_layers/ are full 1024x1024 transparent overlays.
+    box_margin = int(cfg.get("box_margin", 8))
+    tile_pad = int(cfg.get("tile_pad", 4))
+    col_gap = int(cfg.get("column_gap", 24))
+
+    # ----- layer helpers --------------------------------------------------- #
+    def load_layer(fname: str):
+        arr = np.array(Image.open(os.path.join("psd_layers", fname))
+                       .convert("RGBA")).astype(np.float32)
+        return clean_layer(arr)
+
+    # -- corner smudge cleanup ------------------------------------------- #
+    def _components(mask):
+        H_, W_ = mask.shape
+        seen = np.zeros_like(mask)
+        out = []
+        for y, x in zip(*np.where(mask)):
+            if seen[y, x]:
+                continue
+            q = deque([(y, x)])
+            seen[y, x] = True
+            comp = []
+            while q:
+                cy, cx = q.popleft()
+                comp.append((cy, cx))
+                for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    ny, nx = cy + dy, cx + dx
+                    if 0 <= ny < H_ and 0 <= nx < W_ and mask[ny, nx] and not seen[ny, nx]:
+                        seen[ny, nx] = True
+                        q.append((ny, nx))
+            out.append(comp)
+        return out
+
+    def clean_layer(layer):
+        """Erase the export-artifact diagonal smudges ("quote marks") every
+        PSD expression layer carries in the top corners of its own art bbox.
+
+        A line-guard mask (solid dark ink of the drawn outline + 5px) is
+        excluded from EVERY phase: without it a smudge that touches the
+        mouth outline merges with it and the erase eats thousands of
+        outline pixels - which showed up as a pixelated mouth."""
+        ys, xs = np.where(layer[..., 3] > 10)
+        if not len(xs):
+            return layer
+        bx0, by0 = int(xs.min()), int(ys.min())
+        bx1, by1 = int(xs.max()) + 1, int(ys.max()) + 1
+        zones = [(max(0, bx0 - 10), max(0, by0 - 10), min(W, bx0 + 64), min(H, by0 + 64)),
+                 (max(0, bx1 - 64), max(0, by0 - 10), min(W, bx1 + 10), min(H, by0 + 64))]
+
+        l_lum = (0.299 * layer[..., 0] + 0.587 * layer[..., 1]
+                 + 0.114 * layer[..., 2])
+        ink_core = (layer[..., 3] > 200) & (l_lum < 110)
+        guard = np.array(Image.fromarray((ink_core * 255).astype(np.uint8))
+                         .filter(ImageFilter.MaxFilter(11))) > 127  # +/-5px
+
+        kill = np.zeros(layer.shape[:2], bool)
+        for (x0, y0, x1, y1) in zones:
+            b = rgba[y0:y1, x0:x1]
+            l = layer[y0:y1, x0:x1]
+            a = l[..., 3] > 20
+            d = np.abs(l[..., :3] - b[..., :3]).max(axis=2)
+            lum = 0.299 * l[..., 0] + 0.587 * l[..., 1] + 0.114 * l[..., 2]
+            # phase 1: compact smudge blobs, never the line art
+            cand = a & (d > 8) & (lum > 40) & (lum < 215) & ~guard[y0:y1, x0:x1]
+            for comp in _components(cand):
+                n = len(comp)
+                cys = [c[0] for c in comp]
+                cxs = [c[1] for c in comp]
+                bw = max(cxs) - min(cxs) + 1
+                bh = max(cys) - min(cys) + 1
+                if 40 <= n <= 900 and max(bw, bh) <= 50 and min(bw, bh) >= 6:
+                    for cy, cx in comp:
+                        kill[y0 + cy, x0 + cx] = True
+        if not kill.any():
+            return layer
+
+        # phase 2: light airbrush halo within 6px of a confirmed stroke
+        near = np.array(Image.fromarray((kill * 255).astype(np.uint8))
+                        .filter(ImageFilter.MaxFilter(13))) > 127
+        # phase 3: the dark tail of the stroke within 8px, again off the line
+        near2 = np.array(Image.fromarray((kill * 255).astype(np.uint8))
+                         .filter(ImageFilter.MaxFilter(17))) > 127
+        for (x0, y0, x1, y1) in zones:
+            b = rgba[y0:y1, x0:x1]
+            l = layer[y0:y1, x0:x1]
+            a = l[..., 3] > 15
+            d = np.abs(l[..., :3] - b[..., :3]).max(axis=2)
+            lum = 0.299 * l[..., 0] + 0.587 * l[..., 1] + 0.114 * l[..., 2]
+            g = guard[y0:y1, x0:x1]
+            halo = (a & (d > 4) & (lum > 150) & (lum < 234)
+                    & near[y0:y1, x0:x1] & ~g)
+            tail = (a & (d > 8) & (lum > 40) & (lum < 150)
+                    & near2[y0:y1, x0:x1] & ~g)
+            kill[y0:y1, x0:x1] |= halo | tail
+
+        out = layer.copy()
+        out[..., 3][kill] = 0.0
+        # repair: light pixels around the cut get the BASE colour, so the
+        # composite equals the base exactly - no feather ramps can survive
+        near3 = np.array(Image.fromarray((kill * 255).astype(np.uint8))
+                         .filter(ImageFilter.MaxFilter(21))) > 127
+        repair = (near3 & (layer[..., 3] > 15) & (l_lum > 160)
+                  & (l_lum < 232) & ~guard)
+        out[..., 0][repair] = rgba[..., 0][repair]
+        out[..., 1][repair] = rgba[..., 1][repair]
+        out[..., 2][repair] = rgba[..., 2][repair]
+        return out
+
+    def art_bbox(arr) -> tuple | None:
+        a = arr[..., 3] > 10
+        if not a.any():
+            return None
+        ys, xs = np.where(a)
+        return (int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1)
+
+    def union(bbs):
+        bs = [b for b in bbs if b]
+        if not bs:
+            return None
+        return (min(b[0] for b in bs), min(b[1] for b in bs),
+                max(b[2] for b in bs), max(b[3] for b in bs))
+
+    def clamp_box(b):
+        return (max(0, b[0]), max(0, b[1]), min(W, b[2]), min(H, b[3]))
+
+    def make_tile(box, layer):
+        """Neutral crop of the base art with `layer` composited on top.
+
+        Result is opaque wherever the face is opaque, so stacked tiles fully
+        cover the head beneath them.
+        """
+        x0, y0, x1, y1 = box
+        neutral = rgba[y0:y1, x0:x1].copy()
+        if layer is None:
+            return neutral
+        lay = layer[y0:y1, x0:x1]
+        a = lay[..., 3:4] / 255.0
+        out = neutral.copy()
+        out[..., :3] = lay[..., :3] * a + neutral[..., :3] * (1.0 - a)
+        da = neutral[..., 3:4] / 255.0
+        out[..., 3] = (a + da * (1.0 - a))[..., 0] * 255.0
+        return out
+
+    def place(key, tile, x, y):
+        """Blit a tile with `tile_pad` px of replicated edge around it."""
+        p = tile_pad
+        if p > 0:
+            padded = np.pad(tile, ((p, p), (p, p), (0, 0)), mode="edge")
+            blit(atlas, padded, x - p, y - p)
+        else:
+            blit(atlas, tile, x, y)
+        th, tw = tile.shape[:2]
+        placed[key] = dict(rect=(x, y, x + tw, y + th), size=(tw, th))
+
+    # ----- eye detection (mask boxes, kept for reference) ------------------ #
     eyes = geom["eyes"]
+    eye_variants = ["neutral", "half", "blink", "happy", "squint"]
     eye_boxes = []
-    eye_variants = ["neutral", "wide", "half", "blink", "happy", "squint"]
-    placed_eyes = {0: {}, 1: {}}  # side -> variant -> rect in atlas
     for i, e in enumerate(eyes):
-        side = "L" if i == 0 else "R"
         m = eye_mask(lum, alpha, e["cx"], e["cy"],
                      thresh=cfg["eye_dark_thresh"], box=cfg["eye_search_box"])
         ys, xs = np.where(m)
@@ -338,17 +503,13 @@ def build_texture(src_png: str, out_png: str, meta_json: str, geom: dict,
                           "size": (box[2] - box[0], box[3] - box[1]),
                           "variants": eye_variants})
 
-    # ----- mouth ---------------------------------------------------------- #
-    # Use hand-drawn PSD layers for mouth shapes instead of procedural generation.
-    # Vowel shapes for perfect lip-sync: closed, slight, half, A_open, O, I_grin, plus smile/smirk.
+    # ----- mouth detection ------------------------------------------------- #
     mouth_shapes = [
         ("closed", None),           # neutral from base
         ("slight", "M_slight_V1.png"),
         ("half", "M_half_V2.png"),
         ("A_open", "M_A_open_V3.png"),
-        ("O", "M_O_V4.png"),
-        ("I_grin", "M_I_grin_V5.png"),
-        ("smile", None),            # will blend I + happy eyes
+        ("smile", "M_I_grin_V5.png"),
         ("smirk", "M_smirk_V8.png"),
     ]
 
@@ -364,125 +525,107 @@ def build_texture(src_png: str, out_png: str, meta_json: str, geom: dict,
         mcy = float(mys.min() + mys.max()) / 2.0
         mw = int(mxs.max() - mxs.min() + 1)
         mh = int(mys.max() - mys.min() + 1)
-        # use the largest bbox across all mouth layers
-        all_mouth_bboxes = []
-        for _, fname in mouth_shapes:
-            if fname is None:
-                continue
-            p = os.path.join("psd_layers", fname)
-            if os.path.exists(p):
-                larr = np.array(Image.open(p).convert("RGBA")).astype(np.float32)
-                crop, (lx, ly) = crop_nontransparent(larr)
-                all_mouth_bboxes.append((lx, ly, lx + crop.shape[1], ly + crop.shape[0]))
-        if all_mouth_bboxes:
-            bb = np.array(all_mouth_bboxes)
-            px0_m = int(bb[:, 0].min())
-            py0_m = int(bb[:, 1].min())
-            px1_m = int(bb[:, 2].max())
-            py1_m = int(bb[:, 3].max())
-        else:
-            px0_m, py0_m, px1_m, py1_m = int(mxs.min()) - 8, int(mys.min()) - 8, int(mxs.max()) + 1 + 8, int(mys.max()) + 1 + 40
+        mouth_bbox = (int(mxs.min()), int(mys.min()), int(mxs.max()) + 1, int(mys.max()) + 1)
     else:
         lip_rgb = np.array([60.0, 25.0, 25.0])
         mcx, mcy, mw, mh = mx, my, 90, 24
-        px0_m, py0_m, px1_m, py1_m = int(mx) - 95, int(my) - 50, int(mx) + 95, int(my) + 60
+        mys, mxs = np.where(mmask)
+        mouth_bbox = (int(mx) - 45, int(my) - 12, int(mx) + 45, int(my) + 12)
 
-    pw = px1_m - px0_m
-    ph = py1_m - py0_m
-    mouth_box = (px0_m, py0_m, px1_m, py1_m)
-    mouth_bbox = (int(mxs.min()), int(mys.min()), int(mxs.max()) + 1, int(mys.max()) + 1)
+    # ----- load hand-drawn layers once ------------------------------------- #
+    variant_file = {
+        "wide": "E_%s_wide_V4.png",
+        "half": "E_%s_half_V7.png",
+        "blink": "E_%s_blink_V6.png",
+        "happy": "E_%s_happy_V5.png",
+        "squint": "E_%s_squint_V8.png",
+    }
+    layer_cache = {}
 
-    # ----- compose atlas --------------------------------------------------- #
-    # Left half: base art with original eyes/mouth inpainted (covered by overlays).
-    # Right half: all hand-drawn expression layers cropped to their bounding boxes.
+    def eye_layer(side: str, vname: str):
+        key = (side, vname)
+        if key not in layer_cache:
+            layer_cache[key] = load_layer(variant_file[vname] % side)
+        return layer_cache[key]
+
+    # mouth_src[i] = layer for mouth shape i (None -> neutral base crop)
+    igrin = load_layer("M_I_grin_V5.png")
+    mouth_src = [None]
+    for name, fname in mouth_shapes[1:]:
+        if fname is None:
+            mouth_src.append(igrin)                       # smile
+        else:
+            mouth_src.append(load_layer(fname))
+
+    # ----- final boxes ------------------------------------------------------ #
+    # Eye box: mask rig box UNION full layer art (brows etc.) + margin, but
+    # never below the top of the mouth art - the open mouth's lip and the
+    # eye tiles would otherwise fight over the same rows.
+    mouth_art_tops = [b[1] for b in (art_bbox(a) for a in mouth_src if a is not None) if b]
+    mouth_art_tops.append(mouth_bbox[1])
+    mouth_art_top = min(mouth_art_tops)
+
+    for i, side in enumerate(("L", "R")):
+        lb = union([art_bbox(eye_layer(side, v)) for v in variant_file])
+        r = eye_boxes[i]["rig_box"]
+        b = (min(r[0], lb[0]) - box_margin,
+             min(r[1], lb[1]) - box_margin,
+             max(r[2], lb[2]) + box_margin,
+             max(r[3], lb[3]) + box_margin)
+        b = clamp_box(b)
+        eye_boxes[i]["rig_box"] = (b[0], b[1], b[2], min(b[3], mouth_art_top))
+
+    eye_bottom = max(eb["rig_box"][3] for eb in eye_boxes)
+
+    mb = union([art_bbox(a) for a in mouth_src if a is not None] + [mouth_bbox])
+    mouth_box = clamp_box((mb[0] - box_margin, mb[1] - box_margin,
+                           mb[2] + box_margin, mb[3] + box_margin))
+    # the eye band ends at eye_bottom; the mouth band starts there too
+    mouth_box = (mouth_box[0], max(mouth_box[1], eye_bottom),
+                 mouth_box[2], mouth_box[3])
+    assert mouth_box[3] - mouth_box[1] > 20, "mouth box collapsed: %s" % (mouth_box,)
+
+    # ----- compose atlas ---------------------------------------------------- #
+    # Left half: the original art untouched (no inpainting - a flat patch
+    # under the face only ever showed up as a flickering square).
     AW = cfg["atlas_width"]
     AH = cfg["atlas_height"]
     atlas = np.zeros((AH, AW, 4), np.float32)
+    blit(atlas, rgba, 0, 0)
 
-    # Inpaint eyes and mouth on base so overlays can fully replace them
-    base_rgba = rgba.copy()
-    # inpaint eyes
-    for eb in eye_boxes:
-        x0, y0, x1, y1 = eb["box"]
-        eye_mask_region = np.zeros((H, W), bool)
-        eye_mask_region[y0:y1, x0:x1] = True
-        base_rgba = inpaint_region(base_rgba.astype(np.uint8), eye_mask_region, ring=15, feather=3).astype(np.float32)
-    # inpaint mouth
-    base_rgba = inpaint_region(base_rgba.astype(np.uint8), mmask, ring=10, feather=3).astype(np.float32)
-    blit(atlas, base_rgba, 0, 0)
-
-    # Neutral eye/mouth variants are cut from original untouched art, so rest pose matches exactly
-    # They will be overlaid on the inpainted base at full opacity, so neutral state is 1:1 source
-
-    cur_x, cur_y = W + 24, 24
-    col2_x = cur_x + 250  # second column for eye tiles
     placed = {}
-    # Place mouth frames in first column
+    mx0, my0, mx1, my1 = mouth_box
+    mw_box, mh_box = mx1 - mx0, my1 - my0
+    eye_w = [eb["rig_box"][2] - eb["rig_box"][0] for eb in eye_boxes]
+    eye_h = [eb["rig_box"][3] - eb["rig_box"][1] for eb in eye_boxes]
+
+    x_mouth = W + col_gap
+    x_eye0 = x_mouth + mw_box + col_gap
+    x_eye1 = x_eye0 + eye_w[0] + col_gap
+    assert max(x_eye1 + eye_w[1], x_mouth + mw_box) + tile_pad <= AW, \
+        "atlas columns do not fit into %d px" % AW
+
+    # mouth column (bottom -> top matches mouth shape indices)
+    y = 24
     mouth_tiles = []
-    # 0: closed = base crop
-    closed_crop = rgba[py0_m:py1_m, px0_m:px1_m].copy()
-    mouth_tiles.append(("mouth_0", closed_crop))
-    for idx, (name, fname) in enumerate(mouth_shapes[1:], start=1):
-        if fname is not None:
-            p = os.path.join("psd_layers", fname)
-            if os.path.exists(p):
-                larr = np.array(Image.open(p).convert("RGBA")).astype(np.float32)
-                tile = larr[py0_m:py1_m, px0_m:px1_m]
-                mouth_tiles.append((f"mouth_{idx}", tile))
-            else:
-                # fallback to closed
-                mouth_tiles.append((f"mouth_{idx}", closed_crop))
-        else:
-            # smile = blend I_grin a bit wider, reuse I_grin for now placeholder
-            igrin_p = os.path.join("psd_layers", "M_I_grin_V5.png")
-            if os.path.exists(igrin_p):
-                larr = np.array(Image.open(igrin_p).convert("RGBA")).astype(np.float32)
-                tile = larr[py0_m:py1_m, px0_m:px1_m]
-                mouth_tiles.append((f"mouth_{idx}", tile))
-            else:
-                mouth_tiles.append((f"mouth_{idx}", closed_crop))
+    for i, (tile_src) in enumerate(mouth_src):
+        tile = make_tile(mouth_box, tile_src)
+        place("mouth_%d" % i, tile, x_mouth, y)
+        mouth_tiles.append(("mouth_%d" % i, tile))
+        y += tile.shape[0] + 12
+    assert y + tile_pad <= AH, "mouth column overflows atlas height"
 
-    for mid, tile in mouth_tiles:
-        th, tw = tile.shape[:2]
-        blit(atlas, tile, cur_x, cur_y)
-        placed[mid] = dict(rect=(cur_x, cur_y, cur_x + tw, cur_y + th), size=(tw, th))
-        cur_y += th + 12
-
-    # Place eye variants in second column (left eye first, then right eye)
-    cur_y2 = 24
-    for i, e in enumerate(eyes):
-        side = "L" if i == 0 else "R"
-        ex0, ey0, ex1, ey1 = e_box = eye_boxes[i]["rig_box"]
-        ew, eh = ex1 - ex0, ey1 - ey0
-        # neutral = crop from base art
-        neutral_tile = rgba[ey0:ey1, ex0:ex1].copy()
-        key = f"eye_{i}_neutral"
-        blit(atlas, neutral_tile, col2_x, cur_y2)
-        placed[key] = dict(rect=(col2_x, cur_y2, col2_x + ew, cur_y2 + eh), size=(ew, eh))
-        cur_y2 += eh + 8
-        # other variants
-        variant_map = {
-            "wide": f"E_{side}_wide_V4.png",
-            "half": f"E_{side}_half_V7.png",
-            "blink": f"E_{side}_blink_V6.png",
-            "happy": f"E_{side}_happy_V5.png",
-            "squint": f"E_{side}_squint_V8.png",
-        }
-        for vname, fname in variant_map.items():
-            p = os.path.join("psd_layers", fname)
-            if os.path.exists(p):
-                larr = np.array(Image.open(p).convert("RGBA")).astype(np.float32)
-                tile = larr[ey0:ey1, ex0:ex1]
-                key = f"eye_{i}_{vname}"
-                blit(atlas, tile, col2_x, cur_y2)
-                placed[key] = dict(rect=(col2_x, cur_y2, col2_x + ew, cur_y2 + eh), size=(ew, eh))
-                cur_y2 += eh + 8
-            else:
-                # fallback to neutral
-                key = f"eye_{i}_{vname}"
-                blit(atlas, neutral_tile, col2_x, cur_y2)
-                placed[key] = dict(rect=(col2_x, cur_y2, col2_x + ew, cur_y2 + eh), size=(ew, eh))
-                cur_y2 += eh + 8
+    # eye columns: one per eye, neutral first
+    for i, side in enumerate(("L", "R")):
+        rb = eye_boxes[i]["rig_box"]
+        ex = (x_eye0, x_eye1)[i]
+        y = 24
+        for vname in eye_variants:
+            layer = None if vname == "neutral" else eye_layer(side, vname)
+            tile = make_tile(rb, layer)
+            place("eye_%d_%s" % (i, vname), tile, ex, y)
+            y += tile.shape[0] + 10
+        assert y + tile_pad <= AH, "eye column %d overflows atlas height" % i
 
     _ensure(out_png)
     Image.fromarray(atlas.astype(np.uint8)).save(out_png)
