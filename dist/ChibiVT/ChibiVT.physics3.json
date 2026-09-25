@@ -195,7 +195,7 @@
       "Target": "Parameter",
       "Id": "ParamMouthForm"
      },
-     "Weight": 40,
+     "Weight": 15,
      "Type": "X",
      "Reflect": false
     }
@@ -208,7 +208,7 @@
      },
      "VertexIndex": 1,
      "Scale": 0.4,
-     "Weight": 70,
+     "Weight": 55,
      "Type": "Angle",
      "Reflect": false
     },
@@ -219,7 +219,7 @@
      },
      "VertexIndex": 1,
      "Scale": 0.4,
-     "Weight": 70,
+     "Weight": 55,
      "Type": "Angle",
      "Reflect": false
     }
@@ -279,8 +279,8 @@
       "Id": "ParamMouthForm"
      },
      "VertexIndex": 1,
-     "Scale": 0.2,
-     "Weight": 50,
+     "Scale": 0.12,
+     "Weight": 35,
      "Type": "Angle",
      "Reflect": false
     }

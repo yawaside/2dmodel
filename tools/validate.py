@@ -192,11 +192,36 @@ console.log("===JSON===");console.log(JSON.stringify({ids:Array.from(m.parameter
             return max(abs(rows[k + 1] - rows[k]) for k in range(len(rows) - 1))
         return 0.0
 
-    g_open = row_gap(base, 'Eye0')
-    g_shut = row_gap(dumps[10], 'Eye0')
-    check(g_shut > g_open * 2.5,
-          'моргание: шаг сетки глаза %.1f px -> %.1f px (веко сомкнулось)' %
-          (g_open * 1024, g_shut * 1024))
+    # Blink is a frame swap, not a mesh collapse: all eye variants are opaque
+    # tiles and stack_opa() keeps the base fully covered, so the giveaway is
+    # the "blink" drawable switching on while the others switch off.
+    def draw_op(dump, did):
+        for dr in dump['drawables']:
+            if dr['id'] == did:
+                return dr['op']
+        return 0.0
+
+    op_blink_open = draw_op(base, 'Eye0_blink')
+    op_blink_shut = draw_op(dumps[10], 'Eye0_blink')
+    check(op_blink_shut > 0.95 and op_blink_open < 0.05,
+          'моргание: Eye0_blink %.2f -> %.2f (кадр меняется без рывков сетки)'
+          % (op_blink_open, op_blink_shut))
+
+    def base_leak(dump, prefix):
+        """Weight of the head art still visible under a block (leak == square)."""
+        w = 1.0
+        for dr in dump['drawables']:
+            if dr['id'].startswith(prefix):
+                w *= (1.0 - dr['op'])
+        return w
+
+    for idx, lbl, tol in ((0, 'покой', 0.02), (10, 'моргание', 0.02),
+                          (16, 'сложное состояние', 0.15)):
+        for pfx in ('Eye0_', 'Eye1_'):
+            lk = base_leak(dumps[idx], pfx)
+            check(lk <= tol,
+                  '%s: утечка базы под %s = %.3f (норма <= %.2f)'
+                  % (lbl, pfx.rstrip('_'), lk, tol))
 
     def mesh_h(dump, did):
         for dr in dump['drawables']:
@@ -209,20 +234,32 @@ console.log("===JSON===");console.log(JSON.stringify({ids:Array.from(m.parameter
     mframes = sorted([dr['id'] for dr in base['drawables']
                       if dr['id'].startswith('Mouth')])
     check(len(mframes) >= 3, 'кадры рта: %s' % ', '.join(mframes))
-    print('       непрозрачность кадров по ходу параметра:')
+    print('       эффективные вклады кадров (снизу вверх):')
     bad = 0
-    for lbl, idx in (('0.00 (закрыт)', 0), ('0.17', 13), ('0.33', 14),
-                     ('0.50', 15), ('0.67', 16), ('1.00 (открыт)', 11)):
-        ops = []
-        for fid in mframes:
-            dr = [d for d in dumps[idx]['drawables'] if d['id'] == fid][0]
-            ops.append(dr['op'])
-        total = sum(ops)
-        vis = [('%s=%.2f' % (f, o)) for f, o in zip(mframes, ops) if o > 0.01]
-        print('         MouthOpenY %-14s %s   сумма %.2f' % (lbl, ' '.join(vis), total))
-        if abs(total - 1.0) > 0.02:
+    for lbl, idx in (('0.00 (закрыт)', 0), ('0.17', 12), ('0.33', 13),
+                     ('0.50', 14), ('0.67', 15), ('1.00 (открыт)', 11)):
+        stack = sorted([d for d in dumps[idx]['drawables']
+                        if d['id'].startswith('Mouth')], key=lambda d: d['ro'])
+        ops = [d['op'] for d in stack]
+        # contribution of layer k = op_k * product(1 - op_j) for layers above;
+        # what is left after everything = weight of the base art underneath
+        eff, above = [], 1.0
+        for op in reversed(ops):
+            eff.append(op * above)
+            above *= (1.0 - op)
+        eff.reverse()
+        total, base_w = sum(eff), above
+        vis = ['%s=%.2f' % (d['id'], e) for d, e in zip(stack, eff) if e > 0.01]
+        print('         MouthOpenY %-14s %s   сумма %.2f, база %.2f'
+              % (lbl, ' '.join(vis), total, base_w))
+        # keyform states must be exact; between keys a small drift is allowed
+        # (the runtime only linearly interpolates the stored opacities)
+        tol = 0.02 if lbl.startswith(('0.00', '1.00')) else 0.15
+        if abs(total - 1.0) > 0.02 or base_w > tol:
             bad += 1
-    check(bad == 0, 'в каждый момент виден ровно один кадр рта (сумма = 1.00)')
+    check(bad == 0,
+          'рот: вклады кадров дают исходное состояние, база почти перекрыта '
+          '(сумма = 1.00, утечка в норме)')
 
     # кадр 0 — это сама картинка: в покое он должен совпадать с исходником
     check('Mouth0' in mframes, 'первый кадр — нарисованный на модели рот')

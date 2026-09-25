@@ -150,20 +150,8 @@
    "Name": "Mouth5"
   },
   {
-   "Id": "Mouth6",
-   "Name": "Mouth6"
-  },
-  {
-   "Id": "Mouth7",
-   "Name": "Mouth7"
-  },
-  {
    "Id": "Eye0_neutral",
    "Name": "Eye0_neutral"
-  },
-  {
-   "Id": "Eye0_wide",
-   "Name": "Eye0_wide"
   },
   {
    "Id": "Eye0_half",
@@ -184,10 +172,6 @@
   {
    "Id": "Eye1_neutral",
    "Name": "Eye1_neutral"
-  },
-  {
-   "Id": "Eye1_wide",
-   "Name": "Eye1_wide"
   },
   {
    "Id": "Eye1_half",
