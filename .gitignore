@@ -1,0 +1,8 @@
+
+# Cubism Core is proprietary (Live2D licence) - never commit it
+preview/lib/
+
+# generated
+build/
+__pycache__/
+*.pyc
