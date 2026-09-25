@@ -2,8 +2,12 @@
    Needs Live2D Cubism Core (lib/live2dcubismcore.min.js), which is NOT part of
    this repository (Live2D proprietary licence). */
 (() => {
-const MODEL_URL = '../dist/ChibiVT/ChibiVT.model3.json';
-const BASE = MODEL_URL.replace(/[^/]*$/, '');
+// The kit is rebuilt constantly while rigging.  Without a cache-buster the
+// browser serves a fresh .moc3 against the PREVIOUS texture - the model then
+// looks completely broken (e.g. an eye where the mouth should be).
+const BUST = '?v=' + Date.now();
+const MODEL_URL = '../dist/ChibiVT/ChibiVT.model3.json' + BUST;
+const BASE = MODEL_URL.replace(/[^/]*$/, '').replace(/\?.*$/, '');
 const cfg = { scale: 1.35, flipV: false };
 
 const err = document.getElementById('err');
@@ -65,14 +69,14 @@ async function init() {
   status.textContent = 'загрузка model3.json…';
   const meta = await fetch(MODEL_URL).then(r => r.json());
   status.textContent = 'загрузка moc3…';
-  const mocBuf = await fetch(BASE + meta.FileReferences.Moc).then(r => r.arrayBuffer());
+  const mocBuf = await fetch(BASE + meta.FileReferences.Moc + BUST).then(r => r.arrayBuffer());
   const moc = Live2DCubismCore.Moc.fromArrayBuffer(mocBuf);
   if (!moc) throw new Error('Core не смог прочитать moc3');
   model = Live2DCubismCore.Model.fromMoc(moc);
   if (!model) throw new Error('Core не смог создать модель');
 
   status.textContent = 'загрузка текстур…';
-  textures = await Promise.all(meta.FileReferences.Textures.map(t => loadTexture(BASE + t)));
+  textures = await Promise.all(meta.FileReferences.Textures.map(t => loadTexture(BASE + t + BUST)));
 
   const d = model.drawables;
   drawables = [];
