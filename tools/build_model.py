@@ -299,7 +299,9 @@ def build(geom_path, meta_path, atlas_path, outdir, cfg=CFG):
                  (ry0 + (ry1 - ry0) * (py - y0) / (y1 - y0)) / AH)
                 for (px, py) in verts]
 
-    muvs = uvs_for(mbox, meta["placed"]["mouth_open"]["rect"], mv)
+    nfr = int(meta["mouth_frame_count"])
+    muvs = [uvs_for(mbox, meta["placed"]["mouth_%d" % i]["rect"], mv)
+            for i in range(nfr)]
 
     # ---------------- moc3 --------------------------------------------------- #
     b = ModelBuilder(CANV, CANV, CANV, ORG, ORG)
@@ -311,7 +313,10 @@ def build(geom_path, meta_path, atlas_path, outdir, cfg=CFG):
     b.add_param("ParamBodyAngleZ", *cfg["body_range"], 0.0, cfg["body_keys"])
     b.add_param("ParamEyeLOpen", 0.0, 1.0, 1.0, cfg["eye_keys"])
     b.add_param("ParamEyeROpen", 0.0, 1.0, 1.0, cfg["eye_keys"])
-    b.add_param("ParamMouthOpenY", 0.0, 1.0, 0.0, (0.0, 1.0))
+    # the break points of the mouth storyboard have to be parameter keys,
+    # otherwise Cubism interpolates across them and the frames blur together
+    b.add_param("ParamMouthOpenY", 0.0, 1.0, 0.0,
+                tuple(i / float(nfr - 1) for i in range(nfr)))
     b.add_part("PartRoot", 0.0)
 
     # D_Body : root warp deformer (body turn + a bit of head-driven lean).
@@ -360,23 +365,28 @@ def build(geom_path, meta_path, atlas_path, outdir, cfg=CFG):
                    uvs=[(p[0] / AW, p[1] / AH) for p in head_verts], tris=head_tris,
                    draw_order=200, parent_part=0, parent_deformer=1)
 
-    # ---- mouth: the only art that cannot come from the picture, so it stays
-    # invisible at rest and grows out of the mouth's own centre when it opens.
-    my0, my1 = mbox[1], mbox[3]
-    mcy = (my0 + my1) / 2.0
+    # ---- mouth: a storyboard of the mouth that is drawn on the model.
+    # Frame 0 is the picture itself, the following frames are the same drawn
+    # mouth with the lower lip progressively dropped.  Only two neighbouring
+    # frames are ever visible, so the transition stays smooth but every frame
+    # is a real drawing of this character's mouth.
+    def frame_opa(i, nfr=nfr):
+        def f(st):
+            x = float(st["ParamMouthOpenY"]) * (nfr - 1)
+            k = int(min(nfr - 2, max(0, math.floor(x))))
+            loc = min(1.0, max(0.0, x - k))
+            if i == k:
+                return 1.0 - loc
+            if i == k + 1:
+                return loc
+            return 0.0
+        return f
 
-    def mouth_pos(st):
-        r = float(st["ParamMouthOpenY"])
-        s = min(1.0, r * cfg["mouth_grow"])
-        return [head_local(px, mcy + (py - mcy) * s) for (px, py) in mv]
-
-    def mouth_op(st):
-        return min(1.0, float(st["ParamMouthOpenY"]) / cfg["mouth_fade"])
-
-    b.add_art_mesh(id="MouthOpen", verts=[head_local(*p) for p in mv],
-                   uvs=muvs, tris=mt, draw_order=350, parent_part=0,
-                   parent_deformer=1, params=["ParamMouthOpenY"],
-                   pos_fn=mouth_pos, opa_fn=mouth_op)
+    for i in range(nfr):
+        b.add_art_mesh(id="Mouth%d" % i, verts=[head_local(*p) for p in mv],
+                       uvs=muvs[i], tris=mt, draw_order=300 + i,
+                       parent_part=0, parent_deformer=1,
+                       params=["ParamMouthOpenY"], opa_fn=frame_opa(i))
 
     # ---- eyes: the lid closes over the eye using the model's own skin.
     # The outer rows of the mesh stay pinned to the face, the rows inside the
@@ -482,7 +492,7 @@ def build(geom_path, meta_path, atlas_path, outdir, cfg=CFG):
         "ParameterGroups": [],
         "Parts": [{"Id": "PartRoot", "Name": "Root"}],
         "Drawables": [{"Id": i, "Name": i} for i in
-                      ["Body", "Head", "MouthOpen", "Eye0", "Eye1"]],
+                      ["Body", "Head"] + ["Mouth%d" % i for i in range(nfr)] + ["Eye0", "Eye1"]],
     }
     with open(os.path.join(outdir, "%s.cdi3.json" % name), "w") as f:
         json.dump(cdi, f, indent=1)

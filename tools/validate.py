@@ -88,6 +88,8 @@ def main():
               {'ParamAngleY': -30}, {'ParamAngleZ': 30}, {'ParamAngleZ': -30},
               {'ParamBodyAngleX': 10}, {'ParamBodyAngleY': 10}, {'ParamBodyAngleZ': 10},
               {'ParamEyeLOpen': 0, 'ParamEyeROpen': 0}, {'ParamMouthOpenY': 1},
+              {'ParamMouthOpenY': 0.17}, {'ParamMouthOpenY': 0.33},
+              {'ParamMouthOpenY': 0.5}, {'ParamMouthOpenY': 0.67},
               {'ParamAngleX': 30, 'ParamAngleY': -30, 'ParamAngleZ': 30,
                'ParamBodyAngleX': -10, 'ParamBodyAngleY': 10, 'ParamBodyAngleZ': -10,
                'ParamEyeLOpen': 0.3, 'ParamMouthOpenY': 0.7}]
@@ -203,13 +205,27 @@ console.log("===JSON===");console.log(JSON.stringify({ids:Array.from(m.parameter
                 return (max(ys) - min(ys)) * 1024
         return 0.0
 
-    mh0 = mesh_h(base, 'MouthOpen')
-    mh1 = mesh_h(dumps[11], 'MouthOpen')
-    op0 = [dr['op'] for dr in base['drawables'] if dr['id'] == 'MouthOpen'][0]
-    op1 = [dr['op'] for dr in dumps[11]['drawables'] if dr['id'] == 'MouthOpen'][0]
-    check(mh0 < 1.0 < mh1 and op0 < 0.01 < op1,
-          'рот: высота %.0f px -> %.0f px, непрозрачность %.2f -> %.2f' %
-          (mh0, mh1, op0, op1))
+    # ---- раскадровка рта -------------------------------------------------
+    mframes = sorted([dr['id'] for dr in base['drawables']
+                      if dr['id'].startswith('Mouth')])
+    check(len(mframes) >= 3, 'кадры рта: %s' % ', '.join(mframes))
+    print('       непрозрачность кадров по ходу параметра:')
+    bad = 0
+    for lbl, idx in (('0.00 (закрыт)', 0), ('0.17', 13), ('0.33', 14),
+                     ('0.50', 15), ('0.67', 16), ('1.00 (открыт)', 11)):
+        ops = []
+        for fid in mframes:
+            dr = [d for d in dumps[idx]['drawables'] if d['id'] == fid][0]
+            ops.append(dr['op'])
+        total = sum(ops)
+        vis = [('%s=%.2f' % (f, o)) for f, o in zip(mframes, ops) if o > 0.01]
+        print('         MouthOpenY %-14s %s   сумма %.2f' % (lbl, ' '.join(vis), total))
+        if abs(total - 1.0) > 0.02:
+            bad += 1
+    check(bad == 0, 'в каждый момент виден ровно один кадр рта (сумма = 1.00)')
+
+    # кадр 0 — это сама картинка: в покое он должен совпадать с исходником
+    check('Mouth0' in mframes, 'первый кадр — нарисованный на модели рот')
 
     # the closed mouth is the model's own art, so it must still be there
     check('MouthClosed' not in [dr['id'] for dr in base['drawables']],

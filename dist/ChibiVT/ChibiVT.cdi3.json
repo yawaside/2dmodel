@@ -64,8 +64,20 @@
    "Name": "Head"
   },
   {
-   "Id": "MouthOpen",
-   "Name": "MouthOpen"
+   "Id": "Mouth0",
+   "Name": "Mouth0"
+  },
+  {
+   "Id": "Mouth1",
+   "Name": "Mouth1"
+  },
+  {
+   "Id": "Mouth2",
+   "Name": "Mouth2"
+  },
+  {
+   "Id": "Mouth3",
+   "Name": "Mouth3"
   },
   {
    "Id": "Eye0",

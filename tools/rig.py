@@ -209,8 +209,65 @@ def make_open_mouth(size, lip_rgb, open_w, open_h):
 
 
 # --------------------------------------------------------------------------- #
+# key frames ("раскадровка") of the drawn mouth
+# --------------------------------------------------------------------------- #
+
+def mouth_frames(crop: np.ndarray, mmask: np.ndarray, drops, lip: int = 5):
+    """One key frame per drop value: *the mouth that is drawn on the model
+    opens*.
+
+    Nothing is pasted over the picture.  The drawn upper lip stays where it
+    is, the drawn lower lip slides down by ``d`` pixels, the gap in between is
+    filled with the mouth's own colour (the ink of the drawing, deepened
+    towards the throat and warmed up as the mouth opens wider) and everything
+    below the lip is left exactly as it is.  So the frames are the character's
+    own mouth at different degrees of opening.
+    """
+    H, W = crop.shape[:2]
+    cols = []
+    for x in range(W):
+        ys = np.where(mmask[:, x])[0]
+        if len(ys):
+            cols.append((x, int(ys.min()), int(ys.max()) + 1))
+    if not cols:
+        return [crop.copy() for _ in drops]
+    ink = crop[..., :3][mmask].mean(axis=0)
+    frames = []
+    for d in drops:
+        f = crop.copy()
+        dd = int(round(d))
+        open_t = min(1.0, dd / 30.0)
+        top_c = ink * 0.50                       # throat: darker
+        bot_c = ink * 1.30 + np.array([70.0, 34.0, 40.0]) * open_t
+        for (x, yt, yb) in cols:
+            a0 = min(H, yt + lip)
+            a1 = min(H, yb + dd - lip)
+            if a1 > a0:
+                t = np.linspace(0.0, 1.0, a1 - a0)[:, None]
+                f[a0:a1, x, :3] = top_c[None, :] * (1 - t) + bot_c[None, :] * t
+                f[a0:a1, x, 3] = 255.0
+            b0 = yb + dd - lip
+            b1 = min(H, yb + dd)
+            if b1 > b0 and b0 >= 0:
+                s0 = max(0, yb - lip)
+                f[b0:b1, x] = crop[s0:s0 + (b1 - b0), x]
+        frames.append(f)
+    return frames
+
+
+# --------------------------------------------------------------------------- #
 # atlas building
 # --------------------------------------------------------------------------- #
+
+def load_override(path: str, size):
+    """Optional hand-drawn replacement for a generated key frame."""
+    if not os.path.exists(path):
+        return None
+    im = Image.open(path).convert("RGBA")
+    if im.size != size:
+        im = im.resize(size, Image.LANCZOS)
+    return np.array(im).astype(np.float32)
+
 
 def _ensure(path: str) -> None:
     d = os.path.dirname(os.path.abspath(path))
@@ -292,18 +349,25 @@ def build_texture(src_png: str, out_png: str, meta_json: str, geom: dict,
         lip_rgb = np.array([60.0, 25.0, 25.0])
         mcx, mcy, mw, mh = mx, my, 90, 24
     pw = mw + 2 * cfg["mouth_pad_x"]
-    ph = max(mh + 2 * cfg["mouth_pad_y"],
-             cfg["mouth_open_h"] + 2 * cfg["mouth_open_margin"])
+    ptop = int(mys.min()) - cfg["mouth_pad_y"]
+    pbot = int(mys.max()) + 1 + max(cfg["mouth_drops"]) + cfg["mouth_pad_y"]
+    ph = pbot - ptop
     px0 = int(round(mcx - pw / 2.0))
-    py0 = int(round(mcy - ph / 2.0))
-    mouth_box = (px0, py0, px0 + pw, py0 + ph)
+    mouth_box = (px0, ptop, px0 + pw, ptop + ph)
     mouth_bbox = (int(mxs.min()), int(mys.min()), int(mxs.max()) + 1, int(mys.max()) + 1)
-    # the open mouth is at least as wide as the closed one, otherwise the
-    # corners of the closed mouth would peek out next to it
-    open_w = min(pw - 2 * cfg["mouth_open_margin"],
-                 mw * cfg["mouth_open_w_scale"])
-    open_h = cfg["mouth_open_h"]
-    open_mouth = make_open_mouth((pw, ph), lip_rgb, open_w, open_h)
+
+    # key frames of the drawn mouth: 0 = closed (the picture itself), then
+    # progressively lower lip drops.  Everything is cut from the source art,
+    # so every frame is the character's own mouth.
+    drops = list(cfg["mouth_drops"])
+    crop = np.array(src.crop(mouth_box)).astype(np.float32)
+    sub_mask = mmask[ptop:ptop + ph, px0:px0 + pw]
+    frames = mouth_frames(crop, sub_mask, drops, cfg["mouth_lip"])
+    for i, f in enumerate(frames):
+        ov = load_override("art/mouth_%d.png" % i, (ph, pw))
+        if ov is not None:
+            frames[i] = ov
+            print("  art/mouth_%d.png -> кадр %d (ваш рисунок)" % (i, i))
 
     # ----- compose atlas --------------------------------------------------- #
     # Left half: the untouched original art.  Right half: the only piece of
@@ -313,11 +377,12 @@ def build_texture(src_png: str, out_png: str, meta_json: str, geom: dict,
     blit(atlas, rgba, 0, 0)
 
     cur_x, cur_y = W + 24, 24
-    tile = open_mouth.astype(np.float32)
-    h, w = tile.shape[:2]
-    blit(atlas, tile, cur_x, cur_y)
-    placed = {"mouth_open": dict(rect=(cur_x, cur_y, cur_x + w, cur_y + h),
-                                 size=(w, h))}
+    placed = {}
+    for i, f in enumerate(frames):
+        blit(atlas, f, cur_x, cur_y)
+        placed["mouth_%d" % i] = dict(rect=(cur_x, cur_y, cur_x + pw, cur_y + ph),
+                                      size=(pw, ph), drop=drops[i])
+        cur_y += ph + 16
 
     _ensure(out_png)
     Image.fromarray(atlas.astype(np.uint8)).save(out_png)
@@ -327,7 +392,7 @@ def build_texture(src_png: str, out_png: str, meta_json: str, geom: dict,
                       for eb in eye_boxes],
                 mouth_box=list(mouth_box), mouth_bbox=list(mouth_bbox),
                 mouth_center=(mcx, mcy), mouth_size=(mw, mh),
-                mouth_open_size=(open_w, open_h),
+                mouth_drops=list(drops), mouth_frame_count=len(frames),
                 placed=placed, lip_rgb=list(map(float, lip_rgb)))
     _ensure(meta_json)
     with open(meta_json, "w") as f:
@@ -346,8 +411,8 @@ if __name__ == "__main__":
     cfg = dict(eye_dark_thresh=150.0, eye_search_box=95, eye_pad=8,
                eye_margin_x=12, eye_margin_top=6, eye_margin_bottom=20,
                mouth_dark_thresh=115.0, mouth_search_w=85, mouth_search_h=34,
-               mouth_pad_x=8, mouth_pad_y=10,
-               mouth_open_w_scale=0.95, mouth_open_h=62, mouth_open_margin=6,
+               mouth_pad_x=8, mouth_pad_y=8, mouth_lip=5,
+               mouth_drops=(0, 10, 22, 34),
                atlas_width=2048)
     meta = build_texture(args.src, args.out, args.meta, json.load(open(args.geom)), cfg)
     print(json.dumps(meta["placed"], indent=1))
