@@ -247,10 +247,14 @@ def build_texture(src_png: str, out_png: str, meta_json: str, geom: dict,
     alpha = rgba[..., 3] > 128
     lum = 0.299 * rgba[..., 0] + 0.587 * rgba[..., 1] + 0.114 * rgba[..., 2]
 
-    base = rgba.copy()
-    atlas_spec = {}
+    # NOTE: nothing is in-painted and nothing is copied into separate tiles
+    # any more.  The eye / mouth meshes sample the original art in place, so
+    # the model is pixel-identical to the source picture at rest.
 
     # ----- eyes ----------------------------------------------------------- #
+    # `box`     - tight bbox of the eye (used for the closing centre)
+    # `rig_box` - the same box grown by a margin of real skin: that skin is
+    #             what the eyelid is made of when the eye closes.
     eyes = geom["eyes"]
     eye_boxes = []
     for i, e in enumerate(eyes):
@@ -260,14 +264,18 @@ def build_texture(src_png: str, out_png: str, meta_json: str, geom: dict,
         pad = cfg["eye_pad"]
         box = (max(0, int(xs.min()) - pad), max(0, int(ys.min()) - pad),
                min(W, int(xs.max()) + pad + 1), min(H, int(ys.max()) + pad + 1))
-        eye_boxes.append({"mask": m, "box": box,
+        mx, mt, mb = cfg["eye_margin_x"], cfg["eye_margin_top"], cfg["eye_margin_bottom"]
+        rig = (max(0, int(xs.min()) - mx), max(0, int(ys.min()) - mt),
+               min(W, int(xs.max()) + 1 + mx), min(H, int(ys.max()) + 1 + mb))
+        eye_boxes.append({"mask": m, "box": box, "rig_box": rig,
                           "center": (e["cx"], e["cy"]),
+                          "cy": float(ys.min() + ys.max()) / 2.0,
+                          "mask_y0": float(ys.min()), "mask_y1": float(ys.max()),
                           "size": (box[2] - box[0], box[3] - box[1])})
-        base = inpaint_region(base, m, ring=cfg["eye_ring"], feather=cfg["eye_feather"])
 
     # ----- mouth ---------------------------------------------------------- #
-    # The closed mouth is cut out of the base art (and in-painted over) so the
-    # open mouth can cross-fade in without the original lips sticking out.
+    # The closed mouth stays in the base art; the mesh with the open mouth
+    # grows out of the mouth's own centre and hides it as it opens.
     mx, my = float(geom["mouth"][0]), float(geom["mouth"][1])
     mmask = mouth_mask(lum, alpha, mx, my,
                        thresh=cfg["mouth_dark_thresh"],
@@ -289,63 +297,37 @@ def build_texture(src_png: str, out_png: str, meta_json: str, geom: dict,
     px0 = int(round(mcx - pw / 2.0))
     py0 = int(round(mcy - ph / 2.0))
     mouth_box = (px0, py0, px0 + pw, py0 + ph)
-    base = inpaint_region(base, mmask, ring=cfg["mouth_ring"],
-                          feather=cfg["mouth_feather"])
-    open_mouth = make_open_mouth((pw, ph), lip_rgb,
-                                 cfg["mouth_open_w"], cfg["mouth_open_h"])
+    mouth_bbox = (int(mxs.min()), int(mys.min()), int(mxs.max()) + 1, int(mys.max()) + 1)
+    # the open mouth is at least as wide as the closed one, otherwise the
+    # corners of the closed mouth would peek out next to it
+    open_w = min(pw - 2 * cfg["mouth_open_margin"],
+                 mw * cfg["mouth_open_w_scale"])
+    open_h = cfg["mouth_open_h"]
+    open_mouth = make_open_mouth((pw, ph), lip_rgb, open_w, open_h)
 
     # ----- compose atlas --------------------------------------------------- #
+    # Left half: the untouched original art.  Right half: the only piece of
+    # art that cannot come from the picture - the inside of the open mouth.
     AW = cfg["atlas_width"]
     atlas = np.zeros((H, AW, 4), np.float32)
-    blit(atlas, base, 0, 0)
-
-    def feathered(tile: np.ndarray) -> np.ndarray:
-        """Fade the outer border so a patch melts into the in-painted skin."""
-        f = cfg["patch_feather"]
-        if not f:
-            return tile
-        t = tile.copy()
-        h, w = t.shape[:2]
-        m = np.ones((h, w), bool)
-        m[:f, :] = False
-        m[-f:, :] = False
-        m[:, :f] = False
-        m[:, -f:] = False
-        t[..., 3] = t[..., 3] * soft_alpha(m, f)
-        return t
+    blit(atlas, rgba, 0, 0)
 
     cur_x, cur_y = W + 24, 24
-    placed = {}
-    for i, eb in enumerate(eye_boxes):
-        tile = feathered(np.array(src.crop(eb["box"])).astype(np.float32))
-        h, w = tile.shape[:2]
-        blit(atlas, tile, cur_x, cur_y)
-        placed["eye_%d" % i] = dict(rect=(cur_x, cur_y, cur_x + w, cur_y + h),
-                                    size=(w, h), box=eb["box"])
-        cur_y += h + 24
-
-    # closed mouth: the untouched original art, feathered at the border
-    tile = feathered(np.array(src.crop(mouth_box)).astype(np.float32))
-    h, w = tile.shape[:2]
-    blit(atlas, tile, cur_x, cur_y)
-    placed["mouth_closed"] = dict(rect=(cur_x, cur_y, cur_x + w, cur_y + h),
-                                  size=(w, h), box=list(mouth_box))
-    cur_y += h + 24
-
-    # open mouth: procedural art
     tile = open_mouth.astype(np.float32)
     h, w = tile.shape[:2]
     blit(atlas, tile, cur_x, cur_y)
-    placed["mouth_open"] = dict(rect=(cur_x, cur_y, cur_x + w, cur_y + h),
-                                size=(w, h))
+    placed = {"mouth_open": dict(rect=(cur_x, cur_y, cur_x + w, cur_y + h),
+                                 size=(w, h))}
 
     _ensure(out_png)
     Image.fromarray(atlas.astype(np.uint8)).save(out_png)
 
     meta = dict(atlas_size=(AW, H), base_rect=(0, 0, W, H),
-                eyes=[{k: v for k, v in eb.items() if k != "mask"} for eb in eye_boxes],
-                mouth_box=list(mouth_box), mouth_center=(mcx, mcy),
-                mouth_size=(mw, mh),
+                eyes=[{k: v for k, v in eb.items() if k != "mask"}
+                      for eb in eye_boxes],
+                mouth_box=list(mouth_box), mouth_bbox=list(mouth_bbox),
+                mouth_center=(mcx, mcy), mouth_size=(mw, mh),
+                mouth_open_size=(open_w, open_h),
                 placed=placed, lip_rgb=list(map(float, lip_rgb)))
     _ensure(meta_json)
     with open(meta_json, "w") as f:
@@ -361,12 +343,15 @@ if __name__ == "__main__":
     ap.add_argument("--out", default="build/texture_atlas.png")
     ap.add_argument("--meta", default="build/atlas.json")
     args = ap.parse_args()
-    cfg = dict(eye_dark_thresh=150.0, eye_search_box=95, eye_pad=8, eye_ring=12,
-               eye_feather=4, patch_feather=7,
+    cfg = dict(eye_dark_thresh=150.0, eye_search_box=95, eye_pad=8,
+               eye_margin_x=12, eye_margin_top=6, eye_margin_bottom=20,
                mouth_dark_thresh=115.0, mouth_search_w=85, mouth_search_h=34,
-               mouth_pad_x=16, mouth_pad_y=18, mouth_ring=10, mouth_feather=4,
-               mouth_open_w=92, mouth_open_h=58, mouth_open_margin=8,
+               mouth_pad_x=8, mouth_pad_y=10,
+               mouth_open_w_scale=0.95, mouth_open_h=62, mouth_open_margin=6,
                atlas_width=2048)
     meta = build_texture(args.src, args.out, args.meta, json.load(open(args.geom)), cfg)
     print(json.dumps(meta["placed"], indent=1))
-    print("mouth box", meta["mouth_box"])
+    print("mouth box", meta["mouth_box"], "bbox", meta["mouth_bbox"])
+    for i, e in enumerate(meta["eyes"]):
+        print("eye %d box %s rig %s cy %.1f" % (i, e["box"], e["rig_box"], e["cy"]))
+

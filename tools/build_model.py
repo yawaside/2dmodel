@@ -59,9 +59,11 @@ CFG = dict(
     mesh_dilate=3,
     patch_cells=6,             # eye / mouth patch grid resolution
     # blink ----------------------------------------------------------------
-    eye_keys=(0.0, 0.25, 0.6, 1.0),
-    eye_closed_scale=0.12,
-    eye_closed_drop=0.10,
+    eye_keys=(0.0, 0.5, 1.0),
+    eye_closed_scale=0.12,     # высота глаза в закрытом состоянии
+    # mouth ---------------------------------------------------------------
+    mouth_grow=2.2,            # как быстро рот набирает полную высоту
+    mouth_fade=0.10,           # и как быстро становится непрозрачным
     # parameter ranges -----------------------------------------------------
     angle_range=(-30.0, 30.0),
     angle_keys=(-30.0, -15.0, 0.0, 15.0, 30.0),
@@ -179,6 +181,30 @@ def grid_mesh(mask, rect, step, dilate_px=3):
     return verts, tris
 
 
+def box_mesh(rect, rows, cols):
+    """Regular rows x cols grid over `rect` (pixel space)."""
+    x0, y0, x1, y1 = rect
+    verts, tris = [], []
+    for j in range(rows + 1):
+        for i in range(cols + 1):
+            verts.append((x0 + (x1 - x0) * i / cols, y0 + (y1 - y0) * j / rows))
+    for j in range(rows):
+        for i in range(cols):
+            a = j * (cols + 1) + i
+            b_, c_, d = a + 1, a + cols + 1, a + cols + 2
+            tris.append((a, b_, c_))
+            tris.append((b_, d, c_))
+    return verts, tris
+
+
+def box_rows_cols(rect, step):
+    """Grid resolution matching the silhouette mesh, so the patches and the
+    face are interpolated by exactly the same deformation."""
+    x0, y0, x1, y1 = rect
+    return (max(2, int(round((y1 - y0) / float(step)))),
+            max(2, int(round((x1 - x0) / float(step)))))
+
+
 def patch_mesh(rect, cells):
     """Regular grid over a rectangle (pixel space)."""
     x0, y0, x1, y1 = rect
@@ -247,19 +273,24 @@ def build(geom_path, meta_path, atlas_path, outdir, cfg=CFG):
     print("head mesh : %d verts / %d tris" % (len(head_verts), len(head_tris)))
     print("body mesh : %d verts / %d tris" % (len(body_verts), len(body_tris)))
 
+    # Eyes: a mesh as dense as the face mesh, sampling the original art right
+    # where the eye is - no copied tile, no in-painting, no feathered edge.
     eye_meshes = []
     for i, e in enumerate(meta["eyes"]):
-        box = e["box"]                       # pixel rect in the character art
-        v, t = patch_mesh(box, cfg["patch_cells"])
-        rect = meta["placed"]["eye_%d" % i]["rect"]
-        uvs = [(x0 / AW, y0 / AH) for (x0, y0) in
-               [(rect[0] + (rect[2] - rect[0]) * (px - box[0]) / (box[2] - box[0]),
-                 rect[1] + (rect[3] - rect[1]) * (py - box[1]) / (box[3] - box[1]))
-                for (px, py) in v]]
-        eye_meshes.append(dict(id="Eye%d" % i, verts=v, tris=t, uvs=uvs, box=box))
+        rb = tuple(e["rig_box"])
+        h = float(rb[3] - rb[1])
+        rows, cols = box_rows_cols(rb, cfg["mesh_step"])
+        v, t = box_mesh(rb, rows, cols)
+        uvs = [(px / AW, py / AH) for (px, py) in v]
+        eye_meshes.append(dict(id="Eye%d" % i, verts=v, tris=t, uvs=uvs,
+                               box=rb, rows=rows, cols=cols,
+                               te0=(e["mask_y0"] - rb[1]) / h,
+                               te1=(e["mask_y1"] - rb[1]) / h,
+                               tc=(e["cy"] - rb[1]) / h))
 
     mbox = tuple(meta["mouth_box"])
-    mv, mt = patch_mesh(mbox, cfg["patch_cells"])
+    rows, cols = box_rows_cols(mbox, cfg["mesh_step"])
+    mv, mt = box_mesh(mbox, rows, cols)
 
     def uvs_for(box, rect, verts):
         x0, y0, x1, y1 = box
@@ -268,8 +299,7 @@ def build(geom_path, meta_path, atlas_path, outdir, cfg=CFG):
                  (ry0 + (ry1 - ry0) * (py - y0) / (y1 - y0)) / AH)
                 for (px, py) in verts]
 
-    muvs_closed = uvs_for(mbox, meta["placed"]["mouth_closed"]["rect"], mv)
-    muvs_open = uvs_for(mbox, meta["placed"]["mouth_open"]["rect"], mv)
+    muvs = uvs_for(mbox, meta["placed"]["mouth_open"]["rect"], mv)
 
     # ---------------- moc3 --------------------------------------------------- #
     b = ModelBuilder(CANV, CANV, CANV, ORG, ORG)
@@ -330,37 +360,52 @@ def build(geom_path, meta_path, atlas_path, outdir, cfg=CFG):
                    uvs=[(p[0] / AW, p[1] / AH) for p in head_verts], tris=head_tris,
                    draw_order=200, parent_part=0, parent_deformer=1)
 
-    # ---- mouth: the closed lips of the source art and the procedural open
-    # mouth cross-fade into each other, so the original mouth never shows
-    # through next to the open one.
+    # ---- mouth: the only art that cannot come from the picture, so it stays
+    # invisible at rest and grows out of the mouth's own centre when it opens.
+    my0, my1 = mbox[1], mbox[3]
+    mcy = (my0 + my1) / 2.0
+
     def mouth_pos(st):
-        return [head_local(*p) for p in mv]
+        r = float(st["ParamMouthOpenY"])
+        s = min(1.0, r * cfg["mouth_grow"])
+        return [head_local(px, mcy + (py - mcy) * s) for (px, py) in mv]
 
-    b.add_art_mesh(id="MouthClosed", verts=[head_local(*p) for p in mv],
-                   uvs=muvs_closed, tris=mt,
-                   draw_order=300, parent_part=0, parent_deformer=1,
-                   params=["ParamMouthOpenY"], pos_fn=mouth_pos,
-                   opa_fn=lambda st: 1.0 - float(st["ParamMouthOpenY"]))
+    def mouth_op(st):
+        return min(1.0, float(st["ParamMouthOpenY"]) / cfg["mouth_fade"])
+
     b.add_art_mesh(id="MouthOpen", verts=[head_local(*p) for p in mv],
-                   uvs=muvs_open, tris=mt,
-                   draw_order=301, parent_part=0, parent_deformer=1,
-                   params=["ParamMouthOpenY"], pos_fn=mouth_pos,
-                   opa_fn=lambda st: float(st["ParamMouthOpenY"]))
+                   uvs=muvs, tris=mt, draw_order=350, parent_part=0,
+                   parent_deformer=1, params=["ParamMouthOpenY"],
+                   pos_fn=mouth_pos, opa_fn=mouth_op)
 
-    # ---- eyes (blink = vertical squash towards the middle of the eye)
+    # ---- eyes: the lid closes over the eye using the model's own skin.
+    # The outer rows of the mesh stay pinned to the face, the rows inside the
+    # eye collapse into a lash line and the rows of skin below stretch up, so
+    # a closed eye is built from real skin taken from around the eye.
     for i, em in enumerate(eye_meshes):
         pid = "ParamEyeLOpen" if i == 0 else "ParamEyeROpen"
-        box = em["box"]
-        cy = (box[1] + box[3]) / 2.0
-        h = box[3] - box[1]
+        rb = em["box"]
+        y0 = float(rb[1])
+        h = float(rb[3] - rb[1])
+        te0, te1, tc = em["te0"], em["te1"], em["tc"]
+        k = cfg["eye_closed_scale"]
 
-        def eye_pos(st, box=box, cy=cy, h=h, verts=em["verts"], pid=pid):
-            o = st[pid]
-            k = cfg["eye_closed_scale"] + (1.0 - cfg["eye_closed_scale"]) * o
-            drop = cfg["eye_closed_drop"] * h * (1.0 - o)
+        def lid_t(t, te0=te0, te1=te1, tc=tc, k=k):
+            if t <= te0:
+                return tc * (t / te0) if te0 > 1e-6 else 0.0
+            off = tc + (te1 - te0) * k
+            if t >= te1:
+                return off + (1.0 - off) * (t - te1) / (1.0 - te1) \
+                    if te1 < 1.0 - 1e-6 else 1.0
+            return tc + (t - te0) * k
+
+        def eye_pos(st, verts=em["verts"], cols=em["cols"], rows=em["rows"],
+                    y0=y0, h=h, lid_t=lid_t, pid=pid):
+            o = float(st[pid])
             out = []
-            for (px, py) in verts:
-                out.append(head_local(px, cy + (py - cy) * k + drop))
+            for n, (px, py) in enumerate(verts):
+                t = (n // (cols + 1)) / float(rows)
+                out.append(head_local(px, y0 + h * (t + (lid_t(t) - t) * (1.0 - o))))
             return out
 
         b.add_art_mesh(id=em["id"], verts=[head_local(*p) for p in em["verts"]],
@@ -437,7 +482,7 @@ def build(geom_path, meta_path, atlas_path, outdir, cfg=CFG):
         "ParameterGroups": [],
         "Parts": [{"Id": "PartRoot", "Name": "Root"}],
         "Drawables": [{"Id": i, "Name": i} for i in
-                      ["Body", "Head", "MouthClosed", "MouthOpen", "Eye0", "Eye1"]],
+                      ["Body", "Head", "MouthOpen", "Eye0", "Eye1"]],
     }
     with open(os.path.join(outdir, "%s.cdi3.json" % name), "w") as f:
         json.dump(cdi, f, indent=1)

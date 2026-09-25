@@ -61,8 +61,10 @@ def rasterise(dump, tex_paths, size=512, flip_v=True):
             if x1 <= x0 or y1 <= y0:
                 continue
             gy, gx = np.mgrid[y0:y1, x0:x1]
-            dx = gx - a[0]
-            dy = gy - a[1]
+            # sample at the pixel centre, otherwise the whole image is shifted
+            # by half a pixel and every comparison with the source art is off
+            dx = gx + 0.5 - a[0]
+            dy = gy + 0.5 - a[1]
             u = Minv[0, 0] * dx + Minv[0, 1] * dy
             v = Minv[1, 0] * dx + Minv[1, 1] * dy
             inside = (u >= -1e-4) & (v >= -1e-4) & (u + v <= 1.0 + 1e-4)

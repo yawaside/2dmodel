@@ -64,10 +64,6 @@
    "Name": "Head"
   },
   {
-   "Id": "MouthClosed",
-   "Name": "MouthClosed"
-  },
-  {
    "Id": "MouthOpen",
    "Name": "MouthOpen"
   },

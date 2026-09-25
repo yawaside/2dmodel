@@ -164,22 +164,56 @@ console.log("===JSON===");console.log(JSON.stringify({ids:Array.from(m.parameter
     for k, (dx, dy) in mov.items():
         print('       %-34s смещение %+6.1f, %+6.1f px' % (k, dx, dy))
 
-    eyes = [dr for dr in dumps[10]['drawables'] if dr['id'].startswith('Eye')]
-    base_eyes = [dr for dr in base['drawables'] if dr['id'].startswith('Eye')]
-    h0 = max(dr['pos'][2 * i + 1] for dr in base_eyes for i in range(len(dr['pos']) // 2)) - \
-         min(dr['pos'][2 * i + 1] for dr in base_eyes for i in range(len(dr['pos']) // 2))
-    h1 = max(dr['pos'][2 * i + 1] for dr in eyes for i in range(len(dr['pos']) // 2)) - \
-         min(dr['pos'][2 * i + 1] for dr in eyes for i in range(len(dr['pos']) // 2))
-    check(h1 < h0 * 0.35, 'моргание: высота глаза %.0f px -> %.0f px' % (h0 * 1024, h1 * 1024))
+    def row_gap(dump, did):
+        """Largest vertical step between two neighbouring rows of a mesh.
 
-    mouth_op = [dr['op'] for dr in base['drawables'] if dr['id'] == 'MouthOpen'][0]
-    mouth_op2 = [dr['op'] for dr in dumps[11]['drawables'] if dr['id'] == 'MouthOpen'][0]
-    check(mouth_op < 0.01 < mouth_op2, 'рот: непрозрачность %.2f (закрыт) -> %.2f (открыт)' % (mouth_op, mouth_op2))
+        The eye mesh keeps its outline (so it stays glued to the face) and
+        closes by collapsing its inner rows - the give-away is one row step
+        that grows from 'one cell' to 'half the eye'.
+        """
+        for dr in dump['drawables']:
+            if dr['id'] != did:
+                continue
+            n = len(dr['pos']) // 2
+            xs = sorted(set(dr['pos'][2 * i] for i in range(n)))
+            ys = sorted(set(dr['pos'][2 * i + 1] for i in range(n)))
+            rows = []
+            i = 0
+            while i < len(ys):
+                j = i
+                while j + 1 < len(ys) and abs(ys[j + 1] - ys[i]) < 1e-6:
+                    j += 1
+                rows.append(sum(ys[i:j + 1]) / (j - i + 1.0))
+                i = j + 1
+            if len(rows) < 3:
+                return 0.0
+            return max(abs(rows[k + 1] - rows[k]) for k in range(len(rows) - 1))
+        return 0.0
 
-    mc_op = [dr['op'] for dr in base['drawables'] if dr['id'] == 'MouthClosed'][0]
-    mc_op2 = [dr['op'] for dr in dumps[11]['drawables'] if dr['id'] == 'MouthClosed'][0]
-    check(mc_op > 0.99 > mc_op2,
-          'кроссфейд губ: %.2f (закрыт) -> %.2f (при открытом рте)' % (mc_op, mc_op2))
+    g_open = row_gap(base, 'Eye0')
+    g_shut = row_gap(dumps[10], 'Eye0')
+    check(g_shut > g_open * 2.5,
+          'моргание: шаг сетки глаза %.1f px -> %.1f px (веко сомкнулось)' %
+          (g_open * 1024, g_shut * 1024))
+
+    def mesh_h(dump, did):
+        for dr in dump['drawables']:
+            if dr['id'] == did:
+                ys = dr['pos'][1::2]
+                return (max(ys) - min(ys)) * 1024
+        return 0.0
+
+    mh0 = mesh_h(base, 'MouthOpen')
+    mh1 = mesh_h(dumps[11], 'MouthOpen')
+    op0 = [dr['op'] for dr in base['drawables'] if dr['id'] == 'MouthOpen'][0]
+    op1 = [dr['op'] for dr in dumps[11]['drawables'] if dr['id'] == 'MouthOpen'][0]
+    check(mh0 < 1.0 < mh1 and op0 < 0.01 < op1,
+          'рот: высота %.0f px -> %.0f px, непрозрачность %.2f -> %.2f' %
+          (mh0, mh1, op0, op1))
+
+    # the closed mouth is the model's own art, so it must still be there
+    check('MouthClosed' not in [dr['id'] for dr in base['drawables']],
+          'закрытый рот — собственная текстура модели (отдельного меша нет)')
 
     print('\n' + ('ВСЁ ОК — комплект готов: %s' % d if ok else 'ЕСТЬ ОШИБКИ'))
     return 0 if ok else 1
