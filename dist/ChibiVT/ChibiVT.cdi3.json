@@ -1,0 +1,83 @@
+{
+ "Version": 3,
+ "Parameters": [
+  {
+   "Id": "ParamAngleX",
+   "GroupId": "",
+   "Name": "ParamAngleX"
+  },
+  {
+   "Id": "ParamAngleY",
+   "GroupId": "",
+   "Name": "ParamAngleY"
+  },
+  {
+   "Id": "ParamAngleZ",
+   "GroupId": "",
+   "Name": "ParamAngleZ"
+  },
+  {
+   "Id": "ParamBodyAngleX",
+   "GroupId": "",
+   "Name": "ParamBodyAngleX"
+  },
+  {
+   "Id": "ParamBodyAngleY",
+   "GroupId": "",
+   "Name": "ParamBodyAngleY"
+  },
+  {
+   "Id": "ParamBodyAngleZ",
+   "GroupId": "",
+   "Name": "ParamBodyAngleZ"
+  },
+  {
+   "Id": "ParamEyeLOpen",
+   "GroupId": "",
+   "Name": "ParamEyeLOpen"
+  },
+  {
+   "Id": "ParamEyeROpen",
+   "GroupId": "",
+   "Name": "ParamEyeROpen"
+  },
+  {
+   "Id": "ParamMouthOpenY",
+   "GroupId": "",
+   "Name": "ParamMouthOpenY"
+  }
+ ],
+ "ParameterGroups": [],
+ "Parts": [
+  {
+   "Id": "PartRoot",
+   "Name": "Root"
+  }
+ ],
+ "Drawables": [
+  {
+   "Id": "Body",
+   "Name": "Body"
+  },
+  {
+   "Id": "Head",
+   "Name": "Head"
+  },
+  {
+   "Id": "MouthClosed",
+   "Name": "MouthClosed"
+  },
+  {
+   "Id": "MouthOpen",
+   "Name": "MouthOpen"
+  },
+  {
+   "Id": "Eye0",
+   "Name": "Eye0"
+  },
+  {
+   "Id": "Eye1",
+   "Name": "Eye1"
+  }
+ ]
+}
