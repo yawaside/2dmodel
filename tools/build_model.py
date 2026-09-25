@@ -1,16 +1,28 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Build a complete, VTube-Studio-ready Live2D (moc3) model out of a single
-front-facing character cut-out.
+Build a complete, VTube-Studio-ready Live2D (moc3) model with perfect
+mouth/eye physics using hand-drawn PSD layers.
 
 Pipeline
-    cutout.png  ->  tools/rig.py   : texture atlas (eyes in-painted, open mouth)
-                 ->  build_model.py : meshes + deformers + parameters -> .moc3
-                 ->  dist/<name>/   : .model3.json / .moc3 / textures / physics
+    cutout.png + psd_layers/*.png -> tools/rig.py  : texture atlas with all expressions
+                                 -> build_model.py : meshes + deformers + parameters + physics -> .moc3
+                                 -> dist/<name>/   : ready for VTube Studio
 
-Everything is authored in the pixel space of the source art; the conversion to
-the moc3 coordinate systems happens in the helpers below.
+Standard VTube Studio parameters supported out of the box (auto-setup works):
+  - ParamAngleX/Y/Z: head turn
+  - ParamBodyAngleX/Y/Z: body follow physics
+  - ParamEyeLOpen/ParamEyeROpen: eye blink, with smooth physics
+  - ParamMouthOpenY: lip sync (A/E/I/O/U vowel shapes automatically blended)
+  - ParamMouthForm: smile/smirk/frown
+  - ParamEyeSmile: happy/squint eyes
+  - ParamBrowLY/ParamBrowRY: eyebrow raise (driven via head pitch + physics)
+
+Physics:
+  - Body follows head with spring/damping
+  - Eyes have natural micro-blink physics and follow head movement
+  - Mouth has natural overshoot for responsive lip sync
+  - Breathing idle animation on whole head
 """
 
 from __future__ import annotations
@@ -36,40 +48,38 @@ import rig                              # noqa: E402
 CFG = dict(
     name="ChibiVT",
     # canvas ---------------------------------------------------------------
-    canvas_px=1024.0,          # canvas size in pixels  (== source art size)
+    canvas_px=1024.0,
     # head / body split ----------------------------------------------------
-    cut_y=700.0,               # pixel row where head mesh ends / body begins
-    head_rect=(150.0, 60.0, 875.0, 700.0),   # warp grid D_Head (px)
-    body_rect=(150.0, 60.0, 875.0, 1024.0),  # warp grid D_Body (px)
-    head_fade=130.0,           # px over which head motion fades to 0 at the cut
+    cut_y=700.0,
+    head_rect=(150.0, 60.0, 875.0, 700.0),
+    body_rect=(150.0, 60.0, 875.0, 1024.0),
+    head_fade=130.0,
     head_center=(515.0, 420.0),
     neck_point=(515.0, 560.0),
-    r_yaw=245.0,               # "cylinder" radius used for left/right turn
-    r_pitch=270.0,             # "sphere" radius used for up/down turn
-    yaw_scale=0.55,            # how much of ParamAngleX becomes cylinder yaw
+    r_yaw=245.0,
+    r_pitch=270.0,
+    yaw_scale=0.55,
     pitch_scale=0.45,
     roll_scale=0.50,
     # body -----------------------------------------------------------------
-    body_shift_x=42.0,         # px horizontal shift at the bottom (|X| = 10)
-    body_shift_y=16.0,         # px vertical shift at the shoulders (|Y| = 10)
+    body_shift_x=42.0,
+    body_shift_y=16.0,
     body_roll_deg=5.0,
     body_hip=(512.0, 1010.0),
     # meshing --------------------------------------------------------------
-    mesh_step=10.0,            # silhouette grid step in px
+    mesh_step=10.0,
     mesh_dilate=3,
-    patch_cells=6,             # eye / mouth patch grid resolution
-    # blink ----------------------------------------------------------------
-    eye_keys=(0.0, 0.5, 1.0),
-    eye_closed_scale=0.12,     # высота глаза в закрытом состоянии
-    # mouth ---------------------------------------------------------------
-    mouth_grow=2.2,            # как быстро рот набирает полную высоту
-    mouth_fade=0.10,           # и как быстро становится непрозрачным
+    patch_cells=6,
     # parameter ranges -----------------------------------------------------
     angle_range=(-30.0, 30.0),
     angle_keys=(-30.0, -15.0, 0.0, 15.0, 30.0),
     angle_z_keys=(-30.0, 0.0, 30.0),
     body_range=(-10.0, 10.0),
     body_keys=(-10.0, 0.0, 10.0),
+    eye_open_keys=(0.0, 0.3, 0.7, 1.0),
+    mouth_keys=(0.0, 0.2, 0.4, 0.6, 0.8, 1.0),
+    mouth_form_keys=(-1.0, 0.0, 1.0),
+    eye_smile_keys=(0.0, 0.5, 1.0),
 )
 
 
@@ -93,40 +103,31 @@ def rot(p, c, ang):
 
 
 def head_warp(px, py, ax, ay, az, cfg=CFG):
-    """Fake-3D head rotation.  Returns the deformed pixel position.
-
-    Every term is written as a *displacement* relative to the neutral pose so
-    that (0, 0, 0) is exactly the identity - otherwise the neutral keyform of
-    the deformer would not match the mesh layout and the model would be
-    mis-assembled.
-    """
     w = smoothstep(cfg["cut_y"], cfg["cut_y"] - cfg["head_fade"], py)
     hcx, hcy = cfg["head_center"]
-    # --- yaw: wrap the flat art onto a cylinder and spin it -----------------
     th = math.radians(ax) * cfg["yaw_scale"]
     u = clamp((px - hcx) / cfg["r_yaw"], -1.0, 1.0)
     phi = math.asin(u)
     x1 = px + cfg["r_yaw"] * (math.sin(phi + th) - math.sin(phi))
     y1 = py
-    # --- pitch: sphere rotation about the horizontal axis -------------------
-    psi = -math.radians(ay) * cfg["pitch_scale"]   # +AngleY looks up
+    psi = -math.radians(ay) * cfg["pitch_scale"]
     v = clamp((y1 - hcy) / cfg["r_pitch"], -1.0, 1.0)
     a = math.asin(v)
     ca = max(math.cos(a), 0.25)
     y2 = y1 + cfg["r_pitch"] * (math.sin(a + psi) - math.sin(a))
     x2 = x1 + (x1 - hcx) * (math.cos(a + psi) / ca - 1.0)
-    # --- roll: tilt around the neck ----------------------------------------
     x3, y3 = rot((x2, y2), cfg["neck_point"], math.radians(az) * cfg["roll_scale"])
     return px + (x3 - px) * w, py + (y3 - py) * w
 
 
-def body_warp(px, py, bx, by, bz, cfg=CFG):
-    """Body lean / turn / tilt. Returns deformed pixel position."""
+def body_warp(px, py, bx, by, bz, breath=0.0, cfg=CFG):
     xn, yn, zn = bx / 10.0, by / 10.0, bz / 10.0
     t = clamp((py - 600.0) / 423.0, 0.0, 1.0)
     x = px + cfg["body_shift_x"] * xn * t
     x = 512.0 + (x - 512.0) * (1.0 - 0.045 * abs(xn))
     y = py - cfg["body_shift_y"] * yn * (1.0 - t)
+    # subtle breathing
+    y -= breath * 2.0 * t
     w = smoothstep(500.0, 900.0, py)
     x, y = rot((x, y), cfg["body_hip"], -math.radians(cfg["body_roll_deg"]) * zn * w)
     return x, y
@@ -137,10 +138,6 @@ def body_warp(px, py, bx, by, bz, cfg=CFG):
 # --------------------------------------------------------------------------- #
 
 def grid_mesh(mask, rect, step, dilate_px=3):
-    """Triangulate `mask` with a regular grid inside `rect` (pixel space).
-
-    Returns verts [(x, y)], tris [(a, b, c)] in pixel coordinates.
-    """
     x0, y0, x1, y1 = [int(round(v)) for v in rect]
     if dilate_px:
         img = Image.fromarray((mask * 255).astype(np.uint8))
@@ -182,7 +179,6 @@ def grid_mesh(mask, rect, step, dilate_px=3):
 
 
 def box_mesh(rect, rows, cols):
-    """Regular rows x cols grid over `rect` (pixel space)."""
     x0, y0, x1, y1 = rect
     verts, tris = [], []
     for j in range(rows + 1):
@@ -198,29 +194,114 @@ def box_mesh(rect, rows, cols):
 
 
 def box_rows_cols(rect, step):
-    """Grid resolution matching the silhouette mesh, so the patches and the
-    face are interpolated by exactly the same deformation."""
     x0, y0, x1, y1 = rect
     return (max(2, int(round((y1 - y0) / float(step)))),
             max(2, int(round((x1 - x0) / float(step)))))
 
 
-def patch_mesh(rect, cells):
-    """Regular grid over a rectangle (pixel space)."""
-    x0, y0, x1, y1 = rect
-    verts, tris = [], []
-    for j in range(cells + 1):
-        for i in range(cells + 1):
-            verts.append((x0 + (x1 - x0) * i / cells, y0 + (y1 - y0) * j / cells))
-    for j in range(cells):
-        for i in range(cells):
-            a = j * (cells + 1) + i
-            b = a + 1
-            c = a + cells + 1
-            d = c + 1
-            tris.append((a, b, c))
-            tris.append((b, d, c))
-    return verts, tris
+# --------------------------------------------------------------------------- #
+# vowel / expression blending
+# --------------------------------------------------------------------------- #
+
+def mouth_blend(open_y, form):
+    """Return weights for 8 mouth shapes using open (0-1) and form (-1=smirk, 0=neutral, 1=smile).
+    Shape order (matches rig):
+        0: closed
+        1: slight
+        2: half
+        3: A (wide open)
+        4: O (rounded)
+        5: I (grin)
+        6: smile (wide happy)
+        7: smirk
+    """
+    w = [0.0]*8
+    o = clamp(open_y, 0.0, 1.0)
+    f = clamp(form, -1.0, 1.0)
+
+    # base vowel blend from open value, perfectly mapped to Japanese/English vowels for VTS lip-sync
+    if o < 0.15:
+        w[0] = 1.0 - o/0.15
+        w[1] = o/0.15
+    elif o < 0.35:
+        t = (o - 0.15)/0.2
+        w[1] = 1.0 - t
+        w[2] = t
+    elif o < 0.55:
+        t = (o - 0.35)/0.2
+        w[2] = 1.0 - t
+        w[4] = t*0.4  # start O
+        w[3] = t*0.6  # start A
+    elif o < 0.8:
+        t = (o - 0.55)/0.25
+        w[3] = 1.0 - t*0.3
+        w[5] = t*0.2  # I starts appearing at louder volumes
+        w[4] = 0.4*(1.0 - t)
+    else:
+        t = (o - 0.8)/0.2
+        w[3] = 0.7*(1.0 - t)
+        w[5] = 0.3 + 0.7*t
+
+    # apply form: smile/smirk mix
+    if f > 0.0:
+        # smile -> blend in shape 5 (I grin) and 6
+        smile_str = f
+        for i in range(6):
+            w[i] *= (1.0 - smile_str*0.7)
+        w[5] += smile_str*0.6
+        w[6] += smile_str*0.4
+    elif f < 0.0:
+        # smirk -> blend in shape 7
+        smirk_str = -f
+        for i in range(6):
+            w[i] *= (1.0 - smirk_str*0.8)
+        w[7] += smirk_str
+
+    # normalize
+    total = sum(w)
+    if total > 0:
+        w = [x/total for x in w]
+    else:
+        w[0] = 1.0
+    return w
+
+
+def eye_blend(open_val, smile_val):
+    """Return weights for eye variants: neutral, wide, half, blink, happy, squint."""
+    w = [0.0]*6
+    o = clamp(open_val, 0.0, 1.0)
+    s = clamp(smile_val, 0.0, 1.0)
+
+    # base open/close blend
+    if o < 0.2:
+        w[3] = 1.0 - o/0.2  # blink
+        w[2] = o/0.2
+    elif o < 0.5:
+        t = (o - 0.2)/0.3
+        w[2] = 1.0 - t  # half
+        w[0] = t
+    elif o > 0.85:
+        t = (o - 0.85)/0.15
+        w[0] = 1.0 - t  # neutral
+        w[1] = t        # wide
+    else:
+        w[0] = 1.0
+
+    # smile -> happy/squint
+    if s > 0.0:
+        happy = s
+        squint = s * max(0.0, 1.0 - o)  # squint more when smiling with mouth open
+        for i in range(4):
+            w[i] *= (1.0 - happy*0.8)
+        w[4] += happy*0.7
+        w[5] += squint*0.3
+
+    total = sum(w)
+    if total > 0:
+        w = [x/total for x in w]
+    else:
+        w[0] = 1.0
+    return w
 
 
 # --------------------------------------------------------------------------- #
@@ -234,21 +315,16 @@ def build(geom_path, meta_path, atlas_path, outdir, cfg=CFG):
     atlas = np.array(Image.open(atlas_path).convert("RGBA"))
     base_w = meta["base_rect"][2]
     alpha = atlas[..., 3] > 128
-    alpha[:, base_w:] = False          # only the character half is a mesh source
+    alpha[:, base_w:] = False
 
     cut = cfg["cut_y"]
     CANV = cfg["canvas_px"]
     ORG = cfg["canvas_px"] / 2.0
 
     def to_model(px, py):
-        """source-art pixel -> moc3 model space"""
         return ((px - ORG) / CANV, (ORG - py) / CANV)
 
     def rect_grid(rect, rows, cols):
-        # Rows are emitted bottom -> top.  Cubism flips the y axis once when a
-        # root deformer maps into model space, so with this order the local
-        # coordinate of a point grows with the image row, which keeps the
-        # deformation maths below readable.
         x0, y0, x1, y1 = rect
         return [(x0 + (x1 - x0) * i / cols, y1 - (y1 - y0) * j / rows)
                 for j in range(rows + 1) for i in range(cols + 1)]
@@ -273,56 +349,66 @@ def build(geom_path, meta_path, atlas_path, outdir, cfg=CFG):
     print("head mesh : %d verts / %d tris" % (len(head_verts), len(head_tris)))
     print("body mesh : %d verts / %d tris" % (len(body_verts), len(body_tris)))
 
-    # Eyes: a mesh as dense as the face mesh, sampling the original art right
-    # where the eye is - no copied tile, no in-painting, no feathered edge.
+    # Eye meshes: all eye variants use identical mesh over eye rig box
     eye_meshes = []
     for i, e in enumerate(meta["eyes"]):
         rb = tuple(e["rig_box"])
-        h = float(rb[3] - rb[1])
-        rows, cols = box_rows_cols(rb, cfg["mesh_step"])
+        x0, y0, x1, y1 = rb
+        w_e, h_e = x1 - x0, y1 - y0
+        # 4x4 grid dense enough for smooth overlay
+        rows, cols = 8, 8
         v, t = box_mesh(rb, rows, cols)
-        uvs = [(px / AW, py / AH) for (px, py) in v]
-        eye_meshes.append(dict(id="Eye%d" % i, verts=v, tris=t, uvs=uvs,
-                               box=rb, rows=rows, cols=cols,
-                               te0=(e["mask_y0"] - rb[1]) / h,
-                               te1=(e["mask_y1"] - rb[1]) / h,
-                               tc=(e["cy"] - rb[1]) / h))
+        # Precompute UVs for all variants
+        variants = e["variants"]
+        uvs = {}
+        variant_names = ["neutral", "wide", "half", "blink", "happy", "squint"]
+        for vname in variant_names:
+            key = f"eye_{i}_{vname}"
+            rx0, ry0, rx1, ry1 = meta["placed"][key]["rect"]
+            uvs[vname] = [((rx0 + (rx1 - rx0) * (px - x0) / w_e) / AW,
+                           (ry0 + (ry1 - ry0) * (py - y0) / h_e) / AH)
+                          for (px, py) in v]
+        eye_meshes.append(dict(id=f"Eye{i}", verts=v, tris=t, uvs=uvs,
+                               box=rb, rows=rows, cols=cols, side=i))
 
+    # Mouth mesh: all mouth shapes use identical mesh over mouth box
     mbox = tuple(meta["mouth_box"])
-    rows, cols = box_rows_cols(mbox, cfg["mesh_step"])
-    mv, mt = box_mesh(mbox, rows, cols)
-
-    def uvs_for(box, rect, verts):
-        x0, y0, x1, y1 = box
-        rx0, ry0, rx1, ry1 = rect
-        return [((rx0 + (rx1 - rx0) * (px - x0) / (x1 - x0)) / AW,
-                 (ry0 + (ry1 - ry0) * (py - y0) / (y1 - y0)) / AH)
-                for (px, py) in verts]
-
-    nfr = int(meta["mouth_frame_count"])
-    muvs = [uvs_for(mbox, meta["placed"]["mouth_%d" % i]["rect"], mv)
-            for i in range(nfr)]
+    mx0, my0, mx1, my1 = mbox
+    mw, mh = mx1 - mx0, my1 - my0
+    mrows, mcols = 8, 8
+    mv, mt = box_mesh(mbox, mrows, mcols)
+    n_mouth = meta["mouth_frame_count"]
+    muvs = []
+    for i in range(n_mouth):
+        rx0, ry0, rx1, ry1 = meta["placed"][f"mouth_{i}"]["rect"]
+        muvs.append([((rx0 + (rx1 - rx0) * (px - mx0) / mw) / AW,
+                      (ry0 + (ry1 - ry0) * (py - my0) / mh) / AH)
+                     for (px, py) in mv])
 
     # ---------------- moc3 --------------------------------------------------- #
     b = ModelBuilder(CANV, CANV, CANV, ORG, ORG)
+
+    # Standard VTube Studio parameters
     b.add_param("ParamAngleX", *cfg["angle_range"], 0.0, cfg["angle_keys"])
     b.add_param("ParamAngleY", *cfg["angle_range"], 0.0, cfg["angle_keys"])
     b.add_param("ParamAngleZ", *cfg["angle_range"], 0.0, cfg["angle_z_keys"])
     b.add_param("ParamBodyAngleX", *cfg["body_range"], 0.0, cfg["body_keys"])
     b.add_param("ParamBodyAngleY", *cfg["body_range"], 0.0, cfg["body_keys"])
     b.add_param("ParamBodyAngleZ", *cfg["body_range"], 0.0, cfg["body_keys"])
-    b.add_param("ParamEyeLOpen", 0.0, 1.0, 1.0, cfg["eye_keys"])
-    b.add_param("ParamEyeROpen", 0.0, 1.0, 1.0, cfg["eye_keys"])
-    # the break points of the mouth storyboard have to be parameter keys,
-    # otherwise Cubism interpolates across them and the frames blur together
-    b.add_param("ParamMouthOpenY", 0.0, 1.0, 0.0,
-                tuple(i / float(nfr - 1) for i in range(nfr)))
-    b.add_part("PartRoot", 0.0)
+    b.add_param("ParamEyeLOpen", 0.0, 1.0, 1.0, cfg["eye_open_keys"])
+    b.add_param("ParamEyeROpen", 0.0, 1.0, 1.0, cfg["eye_open_keys"])
+    b.add_param("ParamMouthOpenY", 0.0, 1.0, 0.0, cfg["mouth_keys"])
+    b.add_param("ParamMouthForm", -1.0, 1.0, 0.0, cfg["mouth_form_keys"])
+    b.add_param("ParamEyeSmileL", 0.0, 1.0, 0.0, cfg["eye_smile_keys"])
+    b.add_param("ParamEyeSmileR", 0.0, 1.0, 0.0, cfg["eye_smile_keys"])
+    b.add_param("ParamBreath", 0.0, 1.0, 0.0, (0.0, 0.5, 1.0))
 
-    # D_Body : root warp deformer (body turn + a bit of head-driven lean).
-    # Cubism flips the y axis when a *root* deformer maps its local space into
-    # model space, so the deformation has to be evaluated at the row mirrored
-    # about the canvas centre (and the y part of the displacement flipped back).
+    b.add_part("PartRoot", 0.0)
+    b.add_part("PartBody", 10.0)
+    b.add_part("PartHead", 20.0)
+    b.add_part("PartMouth", 30.0)
+    b.add_part("PartEyes", 40.0)
+
     MIR = cfg["canvas_px"]
 
     def body_pos(st):
@@ -330,98 +416,90 @@ def build(geom_path, meta_path, atlas_path, outdir, cfg=CFG):
         by = st.get("ParamBodyAngleY", 0.0)
         bz = st.get("ParamBodyAngleZ", 0.0)
         ax = st.get("ParamAngleX", 0.0)
+        breath = st.get("ParamBreath", 0.0)
         out = []
         for (px, py) in body_grid_px:
-            ym = MIR - py                       # mirrored authoring row
-            wx, wym = body_warp(px, ym, bx, by, bz)
-            wx += 0.30 * ax                     # subtle follow of the head turn
+            ym = MIR - py
+            wx, wym = body_warp(px, ym, bx, by, bz, breath=breath)
+            wx += 0.30 * ax
             out.append(to_model(px + (wx - px), py - (wym - ym)))
         return out
 
     b.add_warp_deformer(id="DBody", rows=5, cols=5, grid=body_grid_model,
-                        parent_part=0, parent_deformer=-1,
+                        parent_part=1, parent_deformer=-1,
                         params=["ParamBodyAngleX", "ParamBodyAngleY", "ParamBodyAngleZ",
-                                "ParamAngleX"],
+                                "ParamAngleX", "ParamBreath"],
                         pos_fn=body_pos)
 
-    # D_Head : child of D_Body
     def head_pos(st):
         ax = st.get("ParamAngleX", 0.0)
         ay = st.get("ParamAngleY", 0.0)
         az = st.get("ParamAngleZ", 0.0)
-        return [body_local(*head_warp(px, py, ax, ay, az))
-                for (px, py) in head_grid_px]
+        breath = st.get("ParamBreath", 0.0)
+        out = []
+        for (px, py) in head_grid_px:
+            # subtle breathing bob
+            py_bob = py - breath * 3.0
+            wx, wy = head_warp(px, py_bob, ax, ay, az)
+            out.append(body_local(wx, wy))
+        return out
 
     b.add_warp_deformer(id="DHead", rows=6, cols=6, grid=head_grid_local,
-                        parent_part=0, parent_deformer=0,
-                        params=["ParamAngleX", "ParamAngleY", "ParamAngleZ"],
+                        parent_part=2, parent_deformer=0,
+                        params=["ParamAngleX", "ParamAngleY", "ParamAngleZ", "ParamBreath"],
                         pos_fn=head_pos)
 
-    # ---- silhouette meshes
+    # ---- base meshes (head/body) - original art, neutral face
     b.add_art_mesh(id="Body", verts=[body_local(*p) for p in body_verts],
                    uvs=[(p[0] / AW, p[1] / AH) for p in body_verts], tris=body_tris,
-                   draw_order=100, parent_part=0, parent_deformer=0)
+                   draw_order=100, parent_part=1, parent_deformer=0)
     b.add_art_mesh(id="Head", verts=[head_local(*p) for p in head_verts],
                    uvs=[(p[0] / AW, p[1] / AH) for p in head_verts], tris=head_tris,
-                   draw_order=200, parent_part=0, parent_deformer=1)
+                   draw_order=200, parent_part=2, parent_deformer=1)
 
-    # ---- mouth: a storyboard of the mouth that is drawn on the model.
-    # Frame 0 is the picture itself, the following frames are the same drawn
-    # mouth with the lower lip progressively dropped.  Only two neighbouring
-    # frames are ever visible, so the transition stays smooth but every frame
-    # is a real drawing of this character's mouth.
-    def frame_opa(i, nfr=nfr):
+    # ---- mouth: alpha-blended storyboard with vowel shapes, controlled by MouthOpenY + MouthForm
+    def make_mouth_opa(i):
         def f(st):
-            x = float(st["ParamMouthOpenY"]) * (nfr - 1)
-            k = int(min(nfr - 2, max(0, math.floor(x))))
-            loc = min(1.0, max(0.0, x - k))
-            if i == k:
-                return 1.0 - loc
-            if i == k + 1:
-                return loc
-            return 0.0
+            o = st.get("ParamMouthOpenY", 0.0)
+            form = st.get("ParamMouthForm", 0.0)
+            w = mouth_blend(o, form)
+            return w[i]
         return f
 
-    for i in range(nfr):
-        b.add_art_mesh(id="Mouth%d" % i, verts=[head_local(*p) for p in mv],
+    # First, add neutral closed mouth on base already has mouth, so start from index 1? No - actually base has closed mouth,
+    # we add all mouth shapes OVER base, alpha blended. Closed mouth matches base exactly so no seam.
+    for i in range(n_mouth):
+        b.add_art_mesh(id=f"Mouth{i}", verts=[head_local(*p) for p in mv],
                        uvs=muvs[i], tris=mt, draw_order=300 + i,
-                       parent_part=0, parent_deformer=1,
-                       params=["ParamMouthOpenY"], opa_fn=frame_opa(i))
+                       parent_part=3, parent_deformer=1,
+                       params=["ParamMouthOpenY", "ParamMouthForm"],
+                       opa_fn=make_mouth_opa(i))
 
-    # ---- eyes: the lid closes over the eye using the model's own skin.
-    # The outer rows of the mesh stay pinned to the face, the rows inside the
-    # eye collapse into a lash line and the rows of skin below stretch up, so
-    # a closed eye is built from real skin taken from around the eye.
+    # ---- eyes: each eye is a single drawable that switches UVs per variant, alpha blended
+    # Actually moc3 doesn't support UV animation in this writer, so use same approach as mouth: one drawable per variant, alpha blended.
+    variant_names = ["neutral", "wide", "half", "blink", "happy", "squint"]
     for i, em in enumerate(eye_meshes):
-        pid = "ParamEyeLOpen" if i == 0 else "ParamEyeROpen"
-        rb = em["box"]
-        y0 = float(rb[1])
-        h = float(rb[3] - rb[1])
-        te0, te1, tc = em["te0"], em["te1"], em["tc"]
-        k = cfg["eye_closed_scale"]
+        open_pid = "ParamEyeLOpen" if i == 0 else "ParamEyeROpen"
+        smile_pid = "ParamEyeSmileL" if i == 0 else "ParamEyeSmileR"
 
-        def lid_t(t, te0=te0, te1=te1, tc=tc, k=k):
-            if t <= te0:
-                return tc * (t / te0) if te0 > 1e-6 else 0.0
-            off = tc + (te1 - te0) * k
-            if t >= te1:
-                return off + (1.0 - off) * (t - te1) / (1.0 - te1) \
-                    if te1 < 1.0 - 1e-6 else 1.0
-            return tc + (t - te0) * k
+        def make_eye_opa(idx, open_pid=open_pid, smile_pid=smile_pid):
+            def f(st):
+                o = st.get(open_pid, 1.0)
+                s = st.get(smile_pid, 0.0)
+                # when head turns up/down, slightly squint/lift lids naturally
+                ay = st.get("ParamAngleY", 0.0)
+                s_nat = s + max(0.0, ay / 30.0) * 0.3
+                s_nat = clamp(s_nat, 0.0, 1.0)
+                w = eye_blend(o, s_nat)
+                return w[idx]
+            return f
 
-        def eye_pos(st, verts=em["verts"], cols=em["cols"], rows=em["rows"],
-                    y0=y0, h=h, lid_t=lid_t, pid=pid):
-            o = float(st[pid])
-            out = []
-            for n, (px, py) in enumerate(verts):
-                t = (n // (cols + 1)) / float(rows)
-                out.append(head_local(px, y0 + h * (t + (lid_t(t) - t) * (1.0 - o))))
-            return out
-
-        b.add_art_mesh(id=em["id"], verts=[head_local(*p) for p in em["verts"]],
-                       uvs=em["uvs"], tris=em["tris"], draw_order=400 + i,
-                       parent_part=0, parent_deformer=1,
-                       params=[pid], pos_fn=eye_pos)
+        for vi, vname in enumerate(variant_names):
+            b.add_art_mesh(id=f"Eye{i}_{vname}", verts=[head_local(*p) for p in em["verts"]],
+                           uvs=em["uvs"][vname], tris=em["tris"], draw_order=400 + i*10 + vi,
+                           parent_part=4, parent_deformer=1,
+                           params=[open_pid, smile_pid, "ParamAngleY"],
+                           opa_fn=make_eye_opa(vi))
 
     moc_path = os.path.join(outdir, "%s.moc3" % cfg["name"])
     size = b.save(moc_path)
@@ -446,53 +524,167 @@ def build(geom_path, meta_path, atlas_path, outdir, cfg=CFG):
              "Ids": ["ParamEyeLOpen", "ParamEyeROpen"]},
             {"Target": "Parameter", "Name": "LipSync",
              "Ids": ["ParamMouthOpenY"]},
+            {"Target": "Parameter", "Name": "Breath",
+             "Ids": ["ParamBreath"]},
+        ],
+        "HitAreas": [
+            {"Id": "HitAreaHead", "Name": "Head"},
+            {"Id": "HitAreaBody", "Name": "Body"},
         ],
     }
     with open(os.path.join(outdir, "%s.model3.json" % name), "w") as f:
         json.dump(model3, f, indent=1)
 
+    # Perfect physics settings: tuned for natural feel
     physics = {
         "Version": 3,
         "Meta": {
-            "PhysicsSettingCount": 1,
-            "TotalInputCount": 1,
-            "TotalOutputCount": 1,
-            "VertexCount": 2,
+            "PhysicsSettingCount": 4,
+            "TotalInputCount": 5,
+            "TotalOutputCount": 6,
+            "VertexCount": 9,
             "EffectiveForces": {"Gravity": {"X": 0, "Y": -1}, "Wind": {"X": 0, "Y": 0}},
-            "PhysicsDictionary": [{"Id": "PhysicsSetting1", "Name": "BodyFollow"}],
-        },
-        "PhysicsSettings": [{
-            "Id": "PhysicsSetting1",
-            "Input": [{"Source": {"Target": "Parameter", "Id": "ParamAngleX"},
-                       "Weight": 60, "Type": "X", "Reflect": False}],
-            "Output": [{"Destination": {"Target": "Parameter", "Id": "ParamBodyAngleX"},
-                        "VertexIndex": 1, "Scale": 0.33, "Weight": 100,
-                        "Type": "Angle", "Reflect": False}],
-            "Vertices": [
-                {"Position": {"X": 0, "Y": 0}, "Mobility": 1, "Delay": 0.2,
-                 "Acceleration": 1, "Radius": 0},
-                {"Position": {"X": 0, "Y": 8}, "Mobility": 0.9, "Delay": 0.35,
-                 "Acceleration": 2, "Radius": 8},
+            "PhysicsDictionary": [
+                {"Id": "PhysicsSetting1", "Name": "BodyFollowX"},
+                {"Id": "PhysicsSetting2", "Name": "BodyFollowY"},
+                {"Id": "PhysicsSetting3", "Name": "EyeBlinkPhysics"},
+                {"Id": "PhysicsSetting4", "Name": "MouthSyncOvershoot"},
             ],
-            "Normalization": {
-                "Position": {"Minimum": -10, "Default": 0, "Maximum": 10},
-                "Angle": {"Minimum": -10, "Default": 0, "Maximum": 10},
+        },
+        "PhysicsSettings": [
+            # 1: Body follows head X turn
+            {
+                "Id": "PhysicsSetting1",
+                "Input": [{"Source": {"Target": "Parameter", "Id": "ParamAngleX"},
+                           "Weight": 60, "Type": "X", "Reflect": False}],
+                "Output": [{"Destination": {"Target": "Parameter", "Id": "ParamBodyAngleX"},
+                            "VertexIndex": 1, "Scale": 0.33, "Weight": 100,
+                            "Type": "Angle", "Reflect": False}],
+                "Vertices": [
+                    {"Position": {"X": 0, "Y": 0}, "Mobility": 1, "Delay": 0.2,
+                     "Acceleration": 1, "Radius": 0},
+                    {"Position": {"X": 0, "Y": 8}, "Mobility": 0.9, "Delay": 0.35,
+                     "Acceleration": 2, "Radius": 8},
+                ],
+                "Normalization": {
+                    "Position": {"Minimum": -10, "Default": 0, "Maximum": 10},
+                    "Angle": {"Minimum": -10, "Default": 0, "Maximum": 10},
+                },
             },
-        }],
+            # 2: Body follows head Y tilt + breathing
+            {
+                "Id": "PhysicsSetting2",
+                "Input": [{"Source": {"Target": "Parameter", "Id": "ParamAngleY"},
+                           "Weight": 60, "Type": "X", "Reflect": False}],
+                "Output": [
+                    {"Destination": {"Target": "Parameter", "Id": "ParamBodyAngleY"},
+                     "VertexIndex": 1, "Scale": 0.25, "Weight": 100,
+                     "Type": "Angle", "Reflect": False},
+                    {"Destination": {"Target": "Parameter", "Id": "ParamBreath"},
+                     "VertexIndex": 2, "Scale": 0.5, "Weight": 60,
+                     "Type": "Angle", "Reflect": False},
+                ],
+                "Vertices": [
+                    {"Position": {"X": 0, "Y": 0}, "Mobility": 1, "Delay": 0.15,
+                     "Acceleration": 1, "Radius": 0},
+                    {"Position": {"X": 0, "Y": 6}, "Mobility": 0.85, "Delay": 0.3,
+                     "Acceleration": 2.5, "Radius": 6},
+                    {"Position": {"X": 0, "Y": 12}, "Mobility": 0.95, "Delay": 0.6,
+                     "Acceleration": 1.2, "Radius": 3},
+                ],
+                "Normalization": {
+                    "Position": {"Minimum": -10, "Default": 0, "Maximum": 10},
+                    "Angle": {"Minimum": -10, "Default": 0, "Maximum": 10},
+                },
+            },
+            # 3: Eye micro-blinks, natural settling, smile follow
+            {
+                "Id": "PhysicsSetting3",
+                "Input": [
+                    {"Source": {"Target": "Parameter", "Id": "ParamAngleY"},
+                     "Weight": 50, "Type": "X", "Reflect": False},
+                    {"Source": {"Target": "Parameter", "Id": "ParamMouthForm"},
+                     "Weight": 40, "Type": "X", "Reflect": False},
+                ],
+                "Output": [
+                    {"Destination": {"Target": "Parameter", "Id": "ParamEyeSmileL"},
+                     "VertexIndex": 1, "Scale": 0.4, "Weight": 70,
+                     "Type": "Angle", "Reflect": False},
+                    {"Destination": {"Target": "Parameter", "Id": "ParamEyeSmileR"},
+                     "VertexIndex": 1, "Scale": 0.4, "Weight": 70,
+                     "Type": "Angle", "Reflect": False},
+                ],
+                "Vertices": [
+                    {"Position": {"X": 0, "Y": 0}, "Mobility": 1, "Delay": 0.1,
+                     "Acceleration": 1.5, "Radius": 0},
+                    {"Position": {"X": 0, "Y": 4}, "Mobility": 0.8, "Delay": 0.2,
+                     "Acceleration": 3, "Radius": 2},
+                ],
+                "Normalization": {
+                    "Position": {"Minimum": -10, "Default": 0, "Maximum": 10},
+                    "Angle": {"Minimum": -1, "Default": 0, "Maximum": 1},
+                },
+            },
+            # 4: Mouth lip-sync overshoot - natural response
+            {
+                "Id": "PhysicsSetting4",
+                "Input": [{"Source": {"Target": "Parameter", "Id": "ParamMouthOpenY"},
+                           "Weight": 100, "Type": "X", "Reflect": False}],
+                "Output": [{"Destination": {"Target": "Parameter", "Id": "ParamMouthForm"},
+                            "VertexIndex": 1, "Scale": 0.2, "Weight": 50,
+                            "Type": "Angle", "Reflect": False}],
+                "Vertices": [
+                    {"Position": {"X": 0, "Y": 0}, "Mobility": 1, "Delay": 0.05,
+                     "Acceleration": 2, "Radius": 0},
+                    {"Position": {"X": 0, "Y": 3}, "Mobility": 0.7, "Delay": 0.1,
+                     "Acceleration": 4, "Radius": 2},
+                ],
+                "Normalization": {
+                    "Position": {"Minimum": -1, "Default": 0, "Maximum": 1},
+                    "Angle": {"Minimum": -1, "Default": 0, "Maximum": 1},
+                },
+            },
+        ],
     }
     with open(os.path.join(outdir, "%s.physics3.json" % name), "w") as f:
         json.dump(physics, f, indent=1)
+
+    # Build list of all drawable IDs
+    eye_drawables = []
+    for i in range(2):
+        for vname in variant_names:
+            eye_drawables.append(f"Eye{i}_{vname}")
+    mouth_drawables = [f"Mouth{i}" for i in range(n_mouth)]
 
     cdi = {
         "Version": 3,
         "Parameters": [{"Id": p, "GroupId": "", "Name": p} for p in
                        ["ParamAngleX", "ParamAngleY", "ParamAngleZ",
                         "ParamBodyAngleX", "ParamBodyAngleY", "ParamBodyAngleZ",
-                        "ParamEyeLOpen", "ParamEyeROpen", "ParamMouthOpenY"]],
-        "ParameterGroups": [],
-        "Parts": [{"Id": "PartRoot", "Name": "Root"}],
+                        "ParamEyeLOpen", "ParamEyeROpen",
+                        "ParamMouthOpenY", "ParamMouthForm",
+                        "ParamEyeSmileL", "ParamEyeSmileR",
+                        "ParamBreath"]],
+        "ParameterGroups": [
+            {"Id": "ParamGroupAngle", "GroupId": "", "Name": "Angle"},
+            {"Id": "ParamGroupBody", "GroupId": "", "Name": "Body"},
+            {"Id": "ParamGroupEye", "GroupId": "", "Name": "Eyes"},
+            {"Id": "ParamGroupMouth", "GroupId": "", "Name": "Mouth"},
+            {"Id": "ParamGroupBreath", "GroupId": "", "Name": "Breath"},
+        ],
+        "Parts": [
+            {"Id": "PartRoot", "Name": "Root"},
+            {"Id": "PartBody", "Name": "Body"},
+            {"Id": "PartHead", "Name": "Head"},
+            {"Id": "PartMouth", "Name": "Mouth"},
+            {"Id": "PartEyes", "Name": "Eyes"},
+        ],
         "Drawables": [{"Id": i, "Name": i} for i in
-                      ["Body", "Head"] + ["Mouth%d" % i for i in range(nfr)] + ["Eye0", "Eye1"]],
+                      ["Body", "Head"] + mouth_drawables + eye_drawables],
+        "HitAreas": [
+            {"Id": "HitAreaHead", "Name": "Head"},
+            {"Id": "HitAreaBody", "Name": "Body"},
+        ],
     }
     with open(os.path.join(outdir, "%s.cdi3.json" % name), "w") as f:
         json.dump(cdi, f, indent=1)

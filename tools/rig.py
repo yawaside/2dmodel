@@ -296,6 +296,15 @@ def blit(dst: np.ndarray, tile: np.ndarray, x: int, y: int) -> None:
     dst[y:y1, x:x1] = np.concatenate([oc, oa * 255.0], axis=2)
 
 
+def crop_nontransparent(arr):
+    """Crop RGBA float array to tight bbox around non-transparent pixels."""
+    alpha = arr[..., 3] > 10
+    if alpha.sum() < 1:
+        return arr, (0, 0)
+    ys, xs = np.where(alpha)
+    x0, y0, x1, y1 = int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1
+    return arr[y0:y1, x0:x1].copy(), (x0, y0)
+
 def build_texture(src_png: str, out_png: str, meta_json: str, geom: dict,
                   cfg: dict) -> dict:
     src = Image.open(src_png).convert("RGBA")
@@ -304,17 +313,15 @@ def build_texture(src_png: str, out_png: str, meta_json: str, geom: dict,
     alpha = rgba[..., 3] > 128
     lum = 0.299 * rgba[..., 0] + 0.587 * rgba[..., 1] + 0.114 * rgba[..., 2]
 
-    # NOTE: nothing is in-painted and nothing is copied into separate tiles
-    # any more.  The eye / mouth meshes sample the original art in place, so
-    # the model is pixel-identical to the source picture at rest.
-
     # ----- eyes ----------------------------------------------------------- #
-    # `box`     - tight bbox of the eye (used for the closing centre)
-    # `rig_box` - the same box grown by a margin of real skin: that skin is
-    #             what the eyelid is made of when the eye closes.
+    # Use hand-drawn PSD layers for all eye states instead of procedural deformation.
+    # Layers in psd_layers/ are full 1024x1024 transparent overlays.
     eyes = geom["eyes"]
     eye_boxes = []
+    eye_variants = ["neutral", "wide", "half", "blink", "happy", "squint"]
+    placed_eyes = {0: {}, 1: {}}  # side -> variant -> rect in atlas
     for i, e in enumerate(eyes):
+        side = "L" if i == 0 else "R"
         m = eye_mask(lum, alpha, e["cx"], e["cy"],
                      thresh=cfg["eye_dark_thresh"], box=cfg["eye_search_box"])
         ys, xs = np.where(m)
@@ -324,15 +331,27 @@ def build_texture(src_png: str, out_png: str, meta_json: str, geom: dict,
         mx, mt, mb = cfg["eye_margin_x"], cfg["eye_margin_top"], cfg["eye_margin_bottom"]
         rig = (max(0, int(xs.min()) - mx), max(0, int(ys.min()) - mt),
                min(W, int(xs.max()) + 1 + mx), min(H, int(ys.max()) + 1 + mb))
-        eye_boxes.append({"mask": m, "box": box, "rig_box": rig,
+        eye_boxes.append({"box": box, "rig_box": rig,
                           "center": (e["cx"], e["cy"]),
                           "cy": float(ys.min() + ys.max()) / 2.0,
                           "mask_y0": float(ys.min()), "mask_y1": float(ys.max()),
-                          "size": (box[2] - box[0], box[3] - box[1])})
+                          "size": (box[2] - box[0], box[3] - box[1]),
+                          "variants": eye_variants})
 
     # ----- mouth ---------------------------------------------------------- #
-    # The closed mouth stays in the base art; the mesh with the open mouth
-    # grows out of the mouth's own centre and hides it as it opens.
+    # Use hand-drawn PSD layers for mouth shapes instead of procedural generation.
+    # Vowel shapes for perfect lip-sync: closed, slight, half, A_open, O, I_grin, plus smile/smirk.
+    mouth_shapes = [
+        ("closed", None),           # neutral from base
+        ("slight", "M_slight_V1.png"),
+        ("half", "M_half_V2.png"),
+        ("A_open", "M_A_open_V3.png"),
+        ("O", "M_O_V4.png"),
+        ("I_grin", "M_I_grin_V5.png"),
+        ("smile", None),            # will blend I + happy eyes
+        ("smirk", "M_smirk_V8.png"),
+    ]
+
     mx, my = float(geom["mouth"][0]), float(geom["mouth"][1])
     mmask = mouth_mask(lum, alpha, mx, my,
                        thresh=cfg["mouth_dark_thresh"],
@@ -345,54 +364,136 @@ def build_texture(src_png: str, out_png: str, meta_json: str, geom: dict,
         mcy = float(mys.min() + mys.max()) / 2.0
         mw = int(mxs.max() - mxs.min() + 1)
         mh = int(mys.max() - mys.min() + 1)
+        # use the largest bbox across all mouth layers
+        all_mouth_bboxes = []
+        for _, fname in mouth_shapes:
+            if fname is None:
+                continue
+            p = os.path.join("psd_layers", fname)
+            if os.path.exists(p):
+                larr = np.array(Image.open(p).convert("RGBA")).astype(np.float32)
+                crop, (lx, ly) = crop_nontransparent(larr)
+                all_mouth_bboxes.append((lx, ly, lx + crop.shape[1], ly + crop.shape[0]))
+        if all_mouth_bboxes:
+            bb = np.array(all_mouth_bboxes)
+            px0_m = int(bb[:, 0].min())
+            py0_m = int(bb[:, 1].min())
+            px1_m = int(bb[:, 2].max())
+            py1_m = int(bb[:, 3].max())
+        else:
+            px0_m, py0_m, px1_m, py1_m = int(mxs.min()) - 8, int(mys.min()) - 8, int(mxs.max()) + 1 + 8, int(mys.max()) + 1 + 40
     else:
         lip_rgb = np.array([60.0, 25.0, 25.0])
         mcx, mcy, mw, mh = mx, my, 90, 24
-    pw = mw + 2 * cfg["mouth_pad_x"]
-    ptop = int(mys.min()) - cfg["mouth_pad_y"]
-    pbot = int(mys.max()) + 1 + max(cfg["mouth_drops"]) + cfg["mouth_pad_y"]
-    ph = pbot - ptop
-    px0 = int(round(mcx - pw / 2.0))
-    mouth_box = (px0, ptop, px0 + pw, ptop + ph)
+        px0_m, py0_m, px1_m, py1_m = int(mx) - 95, int(my) - 50, int(mx) + 95, int(my) + 60
+
+    pw = px1_m - px0_m
+    ph = py1_m - py0_m
+    mouth_box = (px0_m, py0_m, px1_m, py1_m)
     mouth_bbox = (int(mxs.min()), int(mys.min()), int(mxs.max()) + 1, int(mys.max()) + 1)
 
-    # key frames of the drawn mouth: 0 = closed (the picture itself), then
-    # progressively lower lip drops.  Everything is cut from the source art,
-    # so every frame is the character's own mouth.
-    drops = list(cfg["mouth_drops"])
-    crop = np.array(src.crop(mouth_box)).astype(np.float32)
-    sub_mask = mmask[ptop:ptop + ph, px0:px0 + pw]
-    frames = mouth_frames(crop, sub_mask, drops, cfg["mouth_lip"])
-    for i, f in enumerate(frames):
-        ov = load_override("art/mouth_%d.png" % i, (ph, pw))
-        if ov is not None:
-            frames[i] = ov
-            print("  art/mouth_%d.png -> кадр %d (ваш рисунок)" % (i, i))
-
     # ----- compose atlas --------------------------------------------------- #
-    # Left half: the untouched original art.  Right half: the only piece of
-    # art that cannot come from the picture - the inside of the open mouth.
+    # Left half: base art with original eyes/mouth inpainted (covered by overlays).
+    # Right half: all hand-drawn expression layers cropped to their bounding boxes.
     AW = cfg["atlas_width"]
-    atlas = np.zeros((H, AW, 4), np.float32)
-    blit(atlas, rgba, 0, 0)
+    AH = cfg["atlas_height"]
+    atlas = np.zeros((AH, AW, 4), np.float32)
+
+    # Inpaint eyes and mouth on base so overlays can fully replace them
+    base_rgba = rgba.copy()
+    # inpaint eyes
+    for eb in eye_boxes:
+        x0, y0, x1, y1 = eb["box"]
+        eye_mask_region = np.zeros((H, W), bool)
+        eye_mask_region[y0:y1, x0:x1] = True
+        base_rgba = inpaint_region(base_rgba.astype(np.uint8), eye_mask_region, ring=15, feather=3).astype(np.float32)
+    # inpaint mouth
+    base_rgba = inpaint_region(base_rgba.astype(np.uint8), mmask, ring=10, feather=3).astype(np.float32)
+    blit(atlas, base_rgba, 0, 0)
+
+    # Neutral eye/mouth variants are cut from original untouched art, so rest pose matches exactly
+    # They will be overlaid on the inpainted base at full opacity, so neutral state is 1:1 source
 
     cur_x, cur_y = W + 24, 24
+    col2_x = cur_x + 250  # second column for eye tiles
     placed = {}
-    for i, f in enumerate(frames):
-        blit(atlas, f, cur_x, cur_y)
-        placed["mouth_%d" % i] = dict(rect=(cur_x, cur_y, cur_x + pw, cur_y + ph),
-                                      size=(pw, ph), drop=drops[i])
-        cur_y += ph + 16
+    # Place mouth frames in first column
+    mouth_tiles = []
+    # 0: closed = base crop
+    closed_crop = rgba[py0_m:py1_m, px0_m:px1_m].copy()
+    mouth_tiles.append(("mouth_0", closed_crop))
+    for idx, (name, fname) in enumerate(mouth_shapes[1:], start=1):
+        if fname is not None:
+            p = os.path.join("psd_layers", fname)
+            if os.path.exists(p):
+                larr = np.array(Image.open(p).convert("RGBA")).astype(np.float32)
+                tile = larr[py0_m:py1_m, px0_m:px1_m]
+                mouth_tiles.append((f"mouth_{idx}", tile))
+            else:
+                # fallback to closed
+                mouth_tiles.append((f"mouth_{idx}", closed_crop))
+        else:
+            # smile = blend I_grin a bit wider, reuse I_grin for now placeholder
+            igrin_p = os.path.join("psd_layers", "M_I_grin_V5.png")
+            if os.path.exists(igrin_p):
+                larr = np.array(Image.open(igrin_p).convert("RGBA")).astype(np.float32)
+                tile = larr[py0_m:py1_m, px0_m:px1_m]
+                mouth_tiles.append((f"mouth_{idx}", tile))
+            else:
+                mouth_tiles.append((f"mouth_{idx}", closed_crop))
+
+    for mid, tile in mouth_tiles:
+        th, tw = tile.shape[:2]
+        blit(atlas, tile, cur_x, cur_y)
+        placed[mid] = dict(rect=(cur_x, cur_y, cur_x + tw, cur_y + th), size=(tw, th))
+        cur_y += th + 12
+
+    # Place eye variants in second column (left eye first, then right eye)
+    cur_y2 = 24
+    for i, e in enumerate(eyes):
+        side = "L" if i == 0 else "R"
+        ex0, ey0, ex1, ey1 = e_box = eye_boxes[i]["rig_box"]
+        ew, eh = ex1 - ex0, ey1 - ey0
+        # neutral = crop from base art
+        neutral_tile = rgba[ey0:ey1, ex0:ex1].copy()
+        key = f"eye_{i}_neutral"
+        blit(atlas, neutral_tile, col2_x, cur_y2)
+        placed[key] = dict(rect=(col2_x, cur_y2, col2_x + ew, cur_y2 + eh), size=(ew, eh))
+        cur_y2 += eh + 8
+        # other variants
+        variant_map = {
+            "wide": f"E_{side}_wide_V4.png",
+            "half": f"E_{side}_half_V7.png",
+            "blink": f"E_{side}_blink_V6.png",
+            "happy": f"E_{side}_happy_V5.png",
+            "squint": f"E_{side}_squint_V8.png",
+        }
+        for vname, fname in variant_map.items():
+            p = os.path.join("psd_layers", fname)
+            if os.path.exists(p):
+                larr = np.array(Image.open(p).convert("RGBA")).astype(np.float32)
+                tile = larr[ey0:ey1, ex0:ex1]
+                key = f"eye_{i}_{vname}"
+                blit(atlas, tile, col2_x, cur_y2)
+                placed[key] = dict(rect=(col2_x, cur_y2, col2_x + ew, cur_y2 + eh), size=(ew, eh))
+                cur_y2 += eh + 8
+            else:
+                # fallback to neutral
+                key = f"eye_{i}_{vname}"
+                blit(atlas, neutral_tile, col2_x, cur_y2)
+                placed[key] = dict(rect=(col2_x, cur_y2, col2_x + ew, cur_y2 + eh), size=(ew, eh))
+                cur_y2 += eh + 8
 
     _ensure(out_png)
     Image.fromarray(atlas.astype(np.uint8)).save(out_png)
 
-    meta = dict(atlas_size=(AW, H), base_rect=(0, 0, W, H),
-                eyes=[{k: v for k, v in eb.items() if k != "mask"}
+    meta = dict(atlas_size=(AW, AH), base_rect=(0, 0, W, H),
+                eyes=[{k: v for k, v in eb.items()}
                       for eb in eye_boxes],
                 mouth_box=list(mouth_box), mouth_bbox=list(mouth_bbox),
                 mouth_center=(mcx, mcy), mouth_size=(mw, mh),
-                mouth_drops=list(drops), mouth_frame_count=len(frames),
+                mouth_shapes=[n for n, _ in mouth_shapes],
+                mouth_frame_count=len(mouth_tiles),
                 placed=placed, lip_rgb=list(map(float, lip_rgb)))
     _ensure(meta_json)
     with open(meta_json, "w") as f:
@@ -413,7 +514,7 @@ if __name__ == "__main__":
                mouth_dark_thresh=115.0, mouth_search_w=85, mouth_search_h=34,
                mouth_pad_x=8, mouth_pad_y=8, mouth_lip=5,
                mouth_drops=(0, 10, 22, 34),
-               atlas_width=2048)
+               atlas_width=2048, atlas_height=2048)
     meta = build_texture(args.src, args.out, args.meta, json.load(open(args.geom)), cfg)
     print(json.dumps(meta["placed"], indent=1))
     print("mouth box", meta["mouth_box"], "bbox", meta["mouth_bbox"])

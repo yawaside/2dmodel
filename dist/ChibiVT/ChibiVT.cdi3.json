@@ -45,13 +45,75 @@
    "Id": "ParamMouthOpenY",
    "GroupId": "",
    "Name": "ParamMouthOpenY"
+  },
+  {
+   "Id": "ParamMouthForm",
+   "GroupId": "",
+   "Name": "ParamMouthForm"
+  },
+  {
+   "Id": "ParamEyeSmileL",
+   "GroupId": "",
+   "Name": "ParamEyeSmileL"
+  },
+  {
+   "Id": "ParamEyeSmileR",
+   "GroupId": "",
+   "Name": "ParamEyeSmileR"
+  },
+  {
+   "Id": "ParamBreath",
+   "GroupId": "",
+   "Name": "ParamBreath"
   }
  ],
- "ParameterGroups": [],
+ "ParameterGroups": [
+  {
+   "Id": "ParamGroupAngle",
+   "GroupId": "",
+   "Name": "Angle"
+  },
+  {
+   "Id": "ParamGroupBody",
+   "GroupId": "",
+   "Name": "Body"
+  },
+  {
+   "Id": "ParamGroupEye",
+   "GroupId": "",
+   "Name": "Eyes"
+  },
+  {
+   "Id": "ParamGroupMouth",
+   "GroupId": "",
+   "Name": "Mouth"
+  },
+  {
+   "Id": "ParamGroupBreath",
+   "GroupId": "",
+   "Name": "Breath"
+  }
+ ],
  "Parts": [
   {
    "Id": "PartRoot",
    "Name": "Root"
+  },
+  {
+   "Id": "PartBody",
+   "Name": "Body"
+  },
+  {
+   "Id": "PartHead",
+   "Name": "Head"
+  },
+  {
+   "Id": "PartMouth",
+   "Name": "Mouth"
+  },
+  {
+   "Id": "PartEyes",
+   "Name": "Eyes"
   }
  ],
  "Drawables": [
@@ -80,12 +142,78 @@
    "Name": "Mouth3"
   },
   {
-   "Id": "Eye0",
-   "Name": "Eye0"
+   "Id": "Mouth4",
+   "Name": "Mouth4"
   },
   {
-   "Id": "Eye1",
-   "Name": "Eye1"
+   "Id": "Mouth5",
+   "Name": "Mouth5"
+  },
+  {
+   "Id": "Mouth6",
+   "Name": "Mouth6"
+  },
+  {
+   "Id": "Mouth7",
+   "Name": "Mouth7"
+  },
+  {
+   "Id": "Eye0_neutral",
+   "Name": "Eye0_neutral"
+  },
+  {
+   "Id": "Eye0_wide",
+   "Name": "Eye0_wide"
+  },
+  {
+   "Id": "Eye0_half",
+   "Name": "Eye0_half"
+  },
+  {
+   "Id": "Eye0_blink",
+   "Name": "Eye0_blink"
+  },
+  {
+   "Id": "Eye0_happy",
+   "Name": "Eye0_happy"
+  },
+  {
+   "Id": "Eye0_squint",
+   "Name": "Eye0_squint"
+  },
+  {
+   "Id": "Eye1_neutral",
+   "Name": "Eye1_neutral"
+  },
+  {
+   "Id": "Eye1_wide",
+   "Name": "Eye1_wide"
+  },
+  {
+   "Id": "Eye1_half",
+   "Name": "Eye1_half"
+  },
+  {
+   "Id": "Eye1_blink",
+   "Name": "Eye1_blink"
+  },
+  {
+   "Id": "Eye1_happy",
+   "Name": "Eye1_happy"
+  },
+  {
+   "Id": "Eye1_squint",
+   "Name": "Eye1_squint"
+  }
+ ],
+ "HitAreas": [
+  {
+   "Id": "HitAreaHead",
+   "Name": "Head"
+  },
+  {
+   "Id": "HitAreaBody",
+   "Name": "Body"
   }
  ]
 }
