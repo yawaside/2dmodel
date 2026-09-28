@@ -29,6 +29,8 @@ HAS_NODE = shutil.which('node') is not None
 
 from build_model import CFG, body_warp, head_warp  # noqa: E402
 
+MODEL_NAME = CFG['name']          # имя модели: dist/<name>/<name>.moc3
+
 
 def js_warp_sweep(states) -> dict:
     """Прогон model.js через node по тем же состояниям, что в python-тесте."""
@@ -274,9 +276,10 @@ class PackStructure(unittest.TestCase):
 
     def test_parameters_match_cdi3(self):
         """Предпросмотр крутит ровно те параметры, что есть в модели."""
-        cdi = ROOT / 'dist' / 'ChibiVT' / 'ChibiVT.cdi3.json'
+        name = MODEL_NAME
+        cdi = ROOT / 'dist' / name / ('%s.cdi3.json' % name)
         if not cdi.exists():
-            self.skipTest('dist/ChibiVT не собран')
+            self.skipTest('dist/%s не собран' % name)
         model_params = [p['Id'] for p in json.loads(cdi.read_text(encoding='utf-8'))['Parameters']]
         preview = [p['id'] for p in self.manifest['parameters']]
         self.assertEqual(sorted(preview), sorted(model_params))
@@ -287,9 +290,10 @@ class PackStructure(unittest.TestCase):
             self.assertTrue(p['label'] and p['group'])
 
     def test_vts_groups_match_model3(self):
-        model3 = ROOT / 'dist' / 'ChibiVT' / 'ChibiVT.model3.json'
+        name = MODEL_NAME
+        model3 = ROOT / 'dist' / name / ('%s.model3.json' % name)
         if not model3.exists():
-            self.skipTest('dist/ChibiVT не собран')
+            self.skipTest('dist/%s не собран' % name)
         groups = json.loads(model3.read_text(encoding='utf-8'))['Groups']
         self.assertEqual(
             sorted((g['name'], tuple(g['ids'])) for g in self.manifest['vts_groups']),

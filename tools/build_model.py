@@ -46,7 +46,7 @@ import rig                              # noqa: E402
 # --------------------------------------------------------------------------- #
 
 CFG = dict(
-    name="ChibiVT",
+    name="wardogs",      # имя модели: dist/<name>/<name>.moc3
     # canvas ---------------------------------------------------------------
     canvas_px=1024.0,
     # head / body split ----------------------------------------------------
@@ -739,9 +739,13 @@ def main():
     ap.add_argument("--geom", default="geom.json")
     ap.add_argument("--meta", default="build/atlas.json")
     ap.add_argument("--atlas", default="build/texture_atlas.png")
-    ap.add_argument("--out", default="dist/ChibiVT")
+    ap.add_argument("--name", default=CFG["name"],
+                    help="имя модели: dist/<name>/<name>.moc3")
+    ap.add_argument("--out", default=None, help="куда положить комплект")
     args = ap.parse_args()
-    build(args.geom, args.meta, args.atlas, args.out)
+    cfg = dict(CFG, name=args.name)
+    out = args.out or ("dist/%s" % args.name)
+    build(args.geom, args.meta, args.atlas, out, cfg)
 
 
 if __name__ == "__main__":

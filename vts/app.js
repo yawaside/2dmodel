@@ -1,4 +1,4 @@
-/* ChibiVT — интерактивный предпросмотр «как в VTube Studio».
+/* wardogs — интерактивный предпросмотр «как в VTube Studio».
  *
  * Модель рисуется без Cubism Core:
  *   · лицо — альфа-стек тайлов (storyboard/blend.js = mouth_blend/eye_blend
@@ -767,7 +767,7 @@ function wireUI() {
       if (!blob) return;
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = 'ChibiVT_vts_frame.png';
+      a.download = (manifest.model_name || 'model') + '_vts_frame.png';
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(a.href), 4000);
     }, 'image/png');

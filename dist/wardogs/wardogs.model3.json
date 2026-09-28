@@ -1,12 +1,12 @@
 {
  "Version": 3,
  "FileReferences": {
-  "Moc": "ChibiVT.moc3",
+  "Moc": "wardogs.moc3",
   "Textures": [
    "textures/texture_00.png"
   ],
-  "Physics": "ChibiVT.physics3.json",
-  "DisplayInfo": "ChibiVT.cdi3.json"
+  "Physics": "wardogs.physics3.json",
+  "DisplayInfo": "wardogs.cdi3.json"
  },
  "Groups": [
   {

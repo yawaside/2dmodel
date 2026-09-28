@@ -6,7 +6,7 @@
 // browser serves a fresh .moc3 against the PREVIOUS texture - the model then
 // looks completely broken (e.g. an eye where the mouth should be).
 const BUST = '?v=' + Date.now();
-const MODEL_URL = '../dist/ChibiVT/ChibiVT.model3.json' + BUST;
+const MODEL_URL = '../dist/wardogs/wardogs.model3.json' + BUST;
 const BASE = MODEL_URL.replace(/[^/]*$/, '').replace(/\?.*$/, '');
 const cfg = { scale: 1.35, flipV: false };
 

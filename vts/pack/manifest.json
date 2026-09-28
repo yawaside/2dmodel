@@ -1,6 +1,7 @@
 {
  "schema_version": 1,
- "name": "ChibiVT · интерактивный предпросмотр VTube Studio",
+ "name": "wardogs · интерактивный предпросмотр VTube Studio",
+ "model_name": "wardogs",
  "kind": "vtube_studio_preview_matches_live2d_rig",
  "provenance": "Ассеты — кропы cutout.png и тайлы атласа модели (tools/rig.py); деформация в браузере — порт head_warp/body_warp и сеточных деформеров из tools/build_model.py. Модель .moc3 не меняется.",
  "canvas": {

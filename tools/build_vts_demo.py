@@ -146,18 +146,19 @@ def build(out: Path, atlas: Path, meta: Path, src: Path, geom: Path,
             eye_tiles[key].append("tiles/eye_%d_%s.png" % (side, vname))
 
     # --- параметры и группы VTube Studio из собранной модели -------------- #
-    model3_path = ROOT / "dist" / "ChibiVT" / "ChibiVT.model3.json"
+    from build_model import CFG, V_LIMIT  # единственный источник геометрии рига
+    name = CFG["name"]
+    model3_path = ROOT / "dist" / name / ("%s.model3.json" % name)
     groups = []
     if model3_path.exists():
         model3 = json.loads(model3_path.read_text(encoding="utf-8"))
         groups = [{"name": g["Name"], "ids": g["Ids"]}
                   for g in model3.get("Groups", [])]
 
-    from build_model import CFG, V_LIMIT  # единственный источник геометрии рига
-
     manifest = {
         "schema_version": 1,
-        "name": "ChibiVT · интерактивный предпросмотр VTube Studio",
+        "name": "%s · интерактивный предпросмотр VTube Studio" % name,
+        "model_name": name,
         "kind": "vtube_studio_preview_matches_live2d_rig",
         "provenance": (
             "Ассеты — кропы cutout.png и тайлы атласа модели (tools/rig.py); "
