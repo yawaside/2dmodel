@@ -1,4 +1,49 @@
-# Live2D-модель для VTube Studio (готова к использованию)
+# Live2D-модель **wardogs** для VTube Studio (готова к использованию)
+
+## Новое: интерактивная сцена «как в VTube Studio»
+
+Добавлен просмотрщик **`/vts/`** — живая модель целиком (голова + корпус) с
+трекингом, морганием, липсинком, физикой и дыханием. Это не скриншот и не
+видео: сцена считается в браузере той же математикой, что записана в `.moc3`.
+
+- **Деформация**: порт `head_warp` / `body_warp` и сеточных деформеров
+  `DHead` 6×6 / `DBody` 5×5 из `tools/build_model.py` — поворот, наклон, крен
+  головы, следование корпуса, дыхание (`vts/model.js`).
+- **Лицо**: альфа-стек тайлов рта и глаз — `mouth_blend` / `eye_blend` /
+  `stack_opa` из `storyboard/blend.js` (тот же файл, что проверяется тестом на
+  совпадение с Python-моделью).
+- **Движение**: курсор вместо камеры (X ±20°, Y ±12°, Z ±8° — как OUT-значения
+  трекинга), idle-анимация, авто-моргание с двойными морганиями, липсинк с
+  **микрофона** (Web Audio RMS, как в VTube Studio) или имитация речи,
+  физика `physics3.json` (пружины с теми же scale/weight/delay).
+- **VTube Studio в деталях**: ползунки всех 13 `Param*` с теми же диапазонами,
+  что в `wardogs.cdi3.json`, группы `EyeBlink` / `LipSync` / `Breath`,
+  экспрессии и жесты на клавишах `1…6`, `B`, `R`, фон сцены (прозрачный /
+  тёмный / зелёный OBS / стрим), каркас модели, экспорт кадра в PNG и JSON позы.
+- Cubism Core не нужен. Ассеты (`vts/pack/`) — кропы `cutout.png` и тайлы
+  атласа модели, из которого собран `.moc3`.
+
+Открыть: `python3 tools/serve.py . 8000` → `http://localhost:8000/vts/`.
+
+```bash
+python3 tools/rig.py                     # атлас модели (если ещё не собран)
+python3 tools/build_vts_demo.py          # ассеты сцены -> vts/pack/
+python3 -m unittest discover -s tests    # 36 проверок, вкл. JS↔Python деформацию
+node tests/vts_smoke.cjs                 # страница поднимается и рисует (без браузера)
+python3 tools/serve.py . 8000            # /vts/
+```
+
+### Что попутно исправлено в модели
+
+При портировании деформации нашёлся дефект рига: нейтральный ключ деформера
+головы **не был тождественным**. В `head_warp()` косинус широты ограничивался
+снизу (`ca = max(cos(a), 0.25)`) уже после `asin`, поэтому при нулевом тангаже
+множитель `cos(a)/ca` был меньше единицы и верх головы (примерно `y < 159`,
+там где `|y − 420| > r_pitch`) стягивался к центру — макушка «защипывалась»
+в складку уже в покое. Ограничение перенесено на саму широту
+(`|v| ≤ sin(acos 0.25)`), теперь покой — точная единица, а полюс по-прежнему
+защищён. Модель пересобрана (`dist/wardogs/wardogs.moc3` и ZIP комплекта),
+регрессия ловится тестом `test_neutral_keyform_is_identity`.
 
 ## Новое: раскадровка глаз и рта для липсинка
 
@@ -28,7 +73,7 @@
 pip install -r requirements-turnaround.txt
 python3 tools/rig.py                        # атлас модели (если ещё не собран)
 python3 tools/build_face_storyboard.py --psd   # пакет раскадровки
-python3 -m unittest discover -s tests -v    # 22 проверки, вкл. JS↔Python блендинг
+python3 -m unittest discover -s tests -v    # проверки, вкл. JS↔Python блендинг
 python3 tools/serve.py . 8000               # /storyboard/ — интерактивный просмотр
 ```
 
@@ -65,22 +110,22 @@ python3 tools/serve.py . 8000           # /turnaround/
 ## Готовый комплект
 
 ```
-dist/ChibiVT/                     <- эту папку целиком скопировать в VTube Studio
-├── ChibiVT.model3.json           <- главный файл модели
-├── ChibiVT.moc3                  <- геометрия, деформеры, параметры (~1 МБ)
-├── ChibiVT.physics3.json         <- идеальная физика: тело, глаза, рот, дыхание
-├── ChibiVT.cdi3.json             <- служебное (VTube Studio не нужно)
+dist/wardogs/                     <- эту папку целиком скопировать в VTube Studio
+├── wardogs.model3.json           <- главный файл модели
+├── wardogs.moc3                  <- геометрия, деформеры, параметры (~1 МБ)
+├── wardogs.physics3.json         <- идеальная физика: тело, глаза, рот, дыхание
+├── wardogs.cdi3.json             <- служебное (VTube Studio не нужно)
 ├── icon.png                      <- иконка в списке моделей
 ├── README.txt                    <- инструкция (рус.)
 ├── README.en.txt
 └── textures/texture_00.png       <- атлас 2048×2048 со всеми выражениями лица
 ```
 
-Архив для скачивания: **`dist/ChibiVT_vtube_studio.zip`**.
+Архив для скачивания: **`dist/wardogs_vtube_studio.zip`**.
 
 ### Установка
 
-1. Скопируйте **всю папку** `ChibiVT` (не отдельные файлы) в папку
+1. Скопируйте **всю папку** `wardogs` (не отдельные файлы) в папку
    `Live2DModels` вашего VTube Studio. Её можно открыть кнопкой
    *Open Data Folder* в настройках VTube Studio (Steam-версия).
 2. Запустите VTube Studio — модель появится в списке.
@@ -189,7 +234,8 @@ storyboard/           интерактивный просмотрщик раск
 face_storyboard/      описание пакета раскадровки (README)
 turnaround/           ракурсы полного роста: просмотрщик + pack/
 preview/              браузерный предпросмотр (WebGL, нужен Cubism Core)
-dist/ChibiVT/         готовый комплект
+vts/                  интерактивная сцена «как в VTube Studio»
+dist/wardogs/         готовый комплект модели
 legacy/               файлы первой версии пайплайна (build_mesh/build_moc)
 ```
 

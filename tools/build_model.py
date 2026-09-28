@@ -46,7 +46,7 @@ import rig                              # noqa: E402
 # --------------------------------------------------------------------------- #
 
 CFG = dict(
-    name="ChibiVT",
+    name="wardogs",      # имя модели: dist/<name>/<name>.moc3
     # canvas ---------------------------------------------------------------
     canvas_px=1024.0,
     # head / body split ----------------------------------------------------
@@ -97,6 +97,11 @@ CFG = dict(
 # math helpers
 # --------------------------------------------------------------------------- #
 
+# Максимальная «широта» головы в долях радиуса r_pitch: держит cos(asin(v))
+# не ниже 0.25, чтобы масштаб по X при тангаже не уходил в бесконечность.
+V_LIMIT = math.sqrt(1.0 - 0.25 ** 2)      # 0.9682458…
+
+
 def clamp(v, lo, hi):
     return lo if v < lo else (hi if v > hi else v)
 
@@ -121,9 +126,15 @@ def head_warp(px, py, ax, ay, az, cfg=CFG):
     x1 = px + cfg["r_yaw"] * (math.sin(phi + th) - math.sin(phi))
     y1 = py
     psi = -math.radians(ay) * cfg["pitch_scale"]
-    v = clamp((y1 - hcy) / cfg["r_pitch"], -1.0, 1.0)
+    # Тангаж = поворот «цилиндра» головы: по X арт сжимается как cos(a+psi)/cos(a).
+    # У самого полюса cos(a) -> 0 и масштаб взрывается, поэтому широта
+    # ограничена: |v| <= sin(acos(0.25)) держит cos(a) >= 0.25. Ограничивать
+    # надо САМ v, а не cos(a) после asin: иначе при psi = 0 множитель
+    # cos(a)/ca != 1, нейтральный ключ перестаёт быть тождественным и макушка
+    # стягивается в вертикальную складку (ловится тестом tests/test_vts.py).
+    v = clamp((y1 - hcy) / cfg["r_pitch"], -V_LIMIT, V_LIMIT)
     a = math.asin(v)
-    ca = max(math.cos(a), 0.25)
+    ca = math.cos(a)
     y2 = y1 + cfg["r_pitch"] * (math.sin(a + psi) - math.sin(a))
     x2 = x1 + (x1 - hcx) * (math.cos(a + psi) / ca - 1.0)
     x3, y3 = rot((x2, y2), cfg["neck_point"], math.radians(az) * cfg["roll_scale"])
@@ -728,9 +739,13 @@ def main():
     ap.add_argument("--geom", default="geom.json")
     ap.add_argument("--meta", default="build/atlas.json")
     ap.add_argument("--atlas", default="build/texture_atlas.png")
-    ap.add_argument("--out", default="dist/ChibiVT")
+    ap.add_argument("--name", default=CFG["name"],
+                    help="имя модели: dist/<name>/<name>.moc3")
+    ap.add_argument("--out", default=None, help="куда положить комплект")
     args = ap.parse_args()
-    build(args.geom, args.meta, args.atlas, args.out)
+    cfg = dict(CFG, name=args.name)
+    out = args.out or ("dist/%s" % args.name)
+    build(args.geom, args.meta, args.atlas, out, cfg)
 
 
 if __name__ == "__main__":

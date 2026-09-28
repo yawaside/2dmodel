@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f5f0">
+  <title>Chibi Studio — модель как в VTube Studio</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="../storyboard/blend.js"></script>
+  <script src="model.js"></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="../turnaround/">chibi<span class="brand-light">studio</span></a>
+    <div class="breadcrumb">Проекты <span>/</span> <b>Chibi soldier</b> <span class="version">VTUBE STUDIO V1</span></div>
+    <nav class="topnav">
+      <a class="outline-button" href="../turnaround/">Ракурсы</a>
+      <a class="outline-button" href="../storyboard/">Раскадровка</a>
+      <a class="outline-button" href="../preview/">Live2D превью <span aria-hidden="true">↗</span></a>
+    </nav>
+  </header>
+
+  <div class="workspace">
+    <aside class="sidebar">
+      <div class="side-title">ПРЕДПРОСМОТР</div>
+      <nav aria-label="Разделы">
+        <button class="nav-item active" data-jump="stage-sec"><span class="dot dot-live"></span>Сцена</button>
+        <button class="nav-item" data-jump="params-sec"><span class="dot dot-params"></span>Параметры</button>
+        <button class="nav-item" data-jump="motion-sec"><span class="dot dot-motion"></span>Движение и звук</button>
+        <button class="nav-item" data-jump="install-sec"><span class="dot dot-install"></span>Установка в VTS</button>
+      </nav>
+      <div class="sidebar-rule"></div>
+      <div class="side-title">МОДЕЛЬ</div>
+      <div class="project-card">
+        <div class="project-avatar"><img src="pack/tiles/head_base.png" alt=""></div>
+        <div><b>wardogs</b><span>готовый комплект dist/wardogs</span></div>
+      </div>
+      <div class="sidebar-bottom">
+        <div class="ready-mark"><span></span>Математика .moc3 в браузере</div>
+        <p>Деформация и блендинг портированы один в один.<br>Cubism Core не нужен.</p>
+      </div>
+    </aside>
+
+    <main>
+      <div class="page-heading">
+        <div>
+          <div class="eyebrow">VTUBE STUDIO PREVIEW / 03</div>
+          <h1>Модель так, как её покажет VTube Studio<span>.</span></h1>
+          <p>Живая сцена: трекинг, моргание, липсинк с микрофона, физика и дыхание — те же
+            <code>ParamAngle*</code>, <code>ParamMouth*</code> и <code>ParamEye*</code>,
+            которые VTube Studio передаёт в <code>wardogs.moc3</code>.</p>
+        </div>
+        <div class="head-actions">
+          <a class="ghost-button" href="../storyboard/">Раскадровка лица</a>
+          <a class="primary-button" href="../dist/wardogs_vtube_studio.zip" download>Готовая модель<span class="file-tag">ZIP</span></a>
+        </div>
+      </div>
+
+      <div id="error" class="error" role="alert" hidden></div>
+
+      <!-- ======================= СЦЕНА ======================= -->
+      <section id="stage-sec" class="panel stage-panel">
+        <div class="stage-head">
+          <h2><span class="live-badge">LIVE</span> Сцена</h2>
+          <div class="bg-chips" role="group" aria-label="Фон сцены">
+            <button data-bg="transparent" class="on">Прозрачный</button>
+            <button data-bg="dark">Тёмная сцена</button>
+            <button data-bg="green">Зелёный OBS</button>
+            <button data-bg="stream">Стрим-фон</button>
+          </div>
+        </div>
+
+        <div class="stage" id="stage">
+          <canvas id="cv"></canvas>
+          <div class="hud" id="hud" hidden></div>
+          <div class="stage-fps" id="fps">— fps</div>
+          <p class="stage-hint" id="stage-hint">Наведите курсор на сцену — модель следит за ним, как за лицом в VTube Studio (±20° по X, ±12° по Y). Тяните сцену, чтобы сдвинуть модель.</p>
+        </div>
+
+        <div class="toolbar" role="group" aria-label="Источники движения">
+          <button id="t-track" class="toggle on" aria-pressed="true">Трекинг (курсор)</button>
+          <button id="t-idle" class="toggle" aria-pressed="false">Idle-движение</button>
+          <button id="t-blink" class="toggle on" aria-pressed="true">Моргание</button>
+          <button id="t-physics" class="toggle on" aria-pressed="true">Физика</button>
+          <button id="t-mic" class="toggle" aria-pressed="false">Липсинк с микрофона</button>
+          <button id="t-talk" class="toggle" aria-pressed="false">Речь (симуляция)</button>
+          <span class="tool-sep"></span>
+          <button id="t-hud" class="toggle on" aria-pressed="true">Параметры на экране</button>
+          <button id="t-wire" class="toggle" aria-pressed="false">Каркас модели</button>
+        </div>
+
+        <div class="stage-grid">
+          <div class="block">
+            <h3>Экспрессии <span class="kbd-hint">1…6</span></h3>
+            <div class="preset-row" id="expr-row">
+              <button data-expr="neutral" class="on">Нейтраль</button>
+              <button data-expr="smile">Улыбка</button>
+              <button data-expr="smirk">Ухмылка</button>
+              <button data-expr="talk">Открытый рот</button>
+              <button data-expr="surprise">Удивление</button>
+              <button data-expr="sleepy">Сонный</button>
+            </div>
+            <h3>Жесты <span class="kbd-hint">B — моргнуть</span></h3>
+            <div class="preset-row" id="gest-row">
+              <button data-gesture="blink">Моргнуть</button>
+              <button data-gesture="nod">Кивок</button>
+              <button data-gesture="shake">Покачать головой</button>
+              <button id="btn-reset">Сброс позы</button>
+            </div>
+          </div>
+
+          <div class="block">
+            <h3>Позиция и размер <span class="kbd-hint">как в VTube Studio</span></h3>
+            <div class="mini-slider">
+              <label for="v-size">Размер <output id="o-size">100%</output></label>
+              <input type="range" id="v-size" min="30" max="200" step="1" value="100">
+            </div>
+            <div class="mini-slider">
+              <label for="v-x">Позиция X <output id="o-x">0%</output></label>
+              <input type="range" id="v-x" min="-50" max="50" step="1" value="0">
+            </div>
+            <div class="mini-slider">
+              <label for="v-y">Позиция Y <output id="o-y">0%</output></label>
+              <input type="range" id="v-y" min="-50" max="50" step="1" value="0">
+            </div>
+            <div class="mini-slider">
+              <label for="v-rot">Поворот <output id="o-rot">0°</output></label>
+              <input type="range" id="v-rot" min="-180" max="180" step="1" value="0">
+            </div>
+          </div>
+
+          <div class="block">
+            <h3>Кадр</h3>
+            <div class="preset-row">
+              <button id="btn-shot">Скачать PNG кадра</button>
+              <button id="btn-copy">Скопировать JSON позы</button>
+            </div>
+            <p class="hint">PNG сохраняется с выбранным фоном — удобно примерить
+              раскладку стрима. JSON — значения всех параметров в том виде, какой
+              понимает VTube Studio.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================== ПАРАМЕТРЫ ===================== -->
+      <section id="params-sec" class="panel">
+        <h2>Параметры VTube Studio</h2>
+        <p class="hint lead">Те же идентификаторы, диапазоны и группы, что записаны в
+          <code>wardogs.cdi3.json</code>. Ползунки, помеченные «источник», обновляются
+          автоматически — в VTube Studio они ведут себя так же: трекинг и физика
+          перезаписывают ручное значение.</p>
+        <div id="params" class="param-groups"></div>
+      </section>
+
+      <!-- ================== ДВИЖЕНИЕ И ЗВУК ================== -->
+      <section id="motion-sec" class="panel">
+        <h2>Движение и звук</h2>
+        <div class="opt-grid">
+          <div class="mini-slider">
+            <label for="opt-smooth">Плавность трекинга <output id="oo-smooth">0.14 с</output></label>
+            <input type="range" id="opt-smooth" min="0.02" max="0.6" step="0.01" value="0.14">
+          </div>
+          <div class="mini-slider">
+            <label for="opt-amp">Амплитуда idle <output id="oo-amp">100%</output></label>
+            <input type="range" id="opt-amp" min="0" max="150" step="5" value="100">
+          </div>
+          <div class="mini-slider">
+            <label for="opt-blink">Моргание каждые <output id="oo-blink">1.6–6.0 с</output></label>
+            <input type="range" id="opt-blink" min="2" max="10" step="0.5" value="6">
+          </div>
+          <div class="mini-slider">
+            <label for="opt-gain">Чувствительность микрофона <output id="oo-gain">×3.0</output></label>
+            <input type="range" id="opt-gain" min="1" max="10" step="0.5" value="3">
+          </div>
+          <div class="mini-slider">
+            <label for="opt-gate">Порог тишины <output id="oo-gate">0.06</output></label>
+            <input type="range" id="opt-gate" min="0" max="0.3" step="0.01" value="0.06">
+          </div>
+          <div class="mini-slider">
+            <label>Уровень микрофона</label>
+            <div class="meter"><span id="mic-level"></span></div>
+          </div>
+        </div>
+        <p class="hint">Курсор → углы головы: X ±20°, Y ±12°, Z ±8° — как OUT-значения
+          трекинга в VTube Studio (сами параметры живут в диапазоне ±30). Микрофон
+          включается только по кнопке «Липсинк с микрофона»: браузер спросит разрешение,
+          звук не записывается и не отправляется — считается только громкость (RMS),
+          как при липсинке в VTube Studio.</p>
+        <div id="mic-error" class="error" hidden></div>
+      </section>
+
+      <!-- ================== УСТАНОВКА В VTS ================== -->
+      <section id="install-sec" class="panel">
+        <h2>Как получить то же самое в VTube Studio</h2>
+        <ol class="steps">
+          <li>Взять готовый комплект <code>dist/wardogs_vtube_studio.zip</code> (или папку <code>dist/wardogs</code>).</li>
+          <li>Распаковать в папку <code>Live2DModels/wardogs/</code> вашего VTube Studio (её открывает кнопка «Open Folder» в настройках; на Windows это
+            <code>Документы/VTube Studio/Live2DModels</code>, на macOS — <code>~/Library/Application Support/VTube Studio/Data/Live2DModels</code>),
+            чтобы рядом лежали <code>wardogs.moc3</code>, <code>wardogs.model3.json</code>, <code>textures/</code>.</li>
+          <li>В VTube Studio нажать «+» слева и выбрать модель <b>wardogs</b>.</li>
+          <li>Включить в настройках модели: <b>авто-моргание</b>, <b>липсинк с микрофона</b>, <b>дыхание</b>, трекинг лица (или мыши).</li>
+          <li>Экспрессии сверху привязать к Hotkeys: улыбка = <code>ParamMouthForm +1</code> + <code>ParamEyeSmileL/R 0.85</code>, ухмылка = <code>ParamMouthForm −1</code>.</li>
+        </ol>
+        <h3>Группы параметров (автонастройка VTube Studio читает их из model3.json)</h3>
+        <div class="table-wrap"><table id="groups-table"></table></div>
+        <h3>Файлы комплекта</h3>
+        <div class="file-grid">
+          <a class="file-chip" href="../dist/wardogs_vtube_studio.zip">⭐ Готовая модель (ZIP)</a>
+          <a class="file-chip" href="../dist/wardogs/wardogs.model3.json">📄 wardogs.model3.json</a>
+          <a class="file-chip" href="../dist/wardogs/wardogs.moc3">📄 wardogs.moc3</a>
+          <a class="file-chip" href="../dist/wardogs/wardogs.physics3.json">📄 physics3.json</a>
+          <a class="file-chip" href="../dist/wardogs/wardogs.cdi3.json">📄 cdi3.json</a>
+          <a class="file-chip" href="../dist/wardogs/textures/texture_00.png">📄 texture_00.png</a>
+          <a class="file-chip" href="pack/manifest.json">📄 манифест предпросмотра</a>
+          <a class="file-chip" href="../dist/wardogs/README.txt">📄 README комплекта</a>
+        </div>
+        <h3>Что здесь повторено точно, а что приблизительно</h3>
+        <div class="table-wrap"><table id="fidelity-table">
+          <thead><tr><th>Что</th><th>Как в этой странице</th><th>Точность</th></tr></thead>
+          <tbody>
+            <tr><td>Лицо: блендинг кадров рта и глаз</td><td><code>mouth_blend</code> / <code>eye_blend</code> / <code>stack_opa</code> из <code>build_model.py</code>, файл <code>storyboard/blend.js</code></td><td>точно, проверяется юнит-тестом JS↔Python</td></tr>
+            <tr><td>Поворот и наклон головы</td><td>порт <code>head_warp</code> (рысканье/тангаж/крен + дыхание)</td><td>точно, те же ключи деформера</td></tr>
+            <tr><td>Корпус, следование за головой</td><td>порт <code>body_warp</code> + деформер 5×5</td><td>точно для сетки деформера</td></tr>
+            <tr><td>Моргание, липсинк, экспрессии</td><td>тайминги и кривые, как в VTS</td><td>похоже: интервалы и кривые — типовые</td></tr>
+            <tr><td>Физика <code>physics3.json</code></td><td>пружины с теми же коэффициентами (scale/weight/delay)</td><td>приблизительно: Cubism Physics считает свои вершины</td></tr>
+            <tr><td>Трекинг лица</td><td>курсор мыши вместо камеры</td><td>имитация: VTS берёт углы с камеры (или мыши)</td></tr>
+          </tbody>
+        </table></div>
+        <p class="hint">Ограничения самой модели (обратная сторона, ракурсы, пропорции) —
+          в <a href="../turnaround/README.md">пакете ракурсов</a>: модель собрана с одного
+          фронтального исходника.</p>
+      </section>
+    </main>
+  </div>
+
+  <footer class="foot">Ассеты — кропы cutout.png и тайлы атласа модели · деформация и блендинг — порт tools/build_model.py · Chibi Studio</footer>
+</body>
+</html>

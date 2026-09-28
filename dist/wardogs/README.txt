@@ -1,16 +1,16 @@
-МОДЕЛЬ ДЛЯ VTube Studio — ChibiVT
+МОДЕЛЬ ДЛЯ VTube Studio — wardogs
 =====================================
 
 ЧТО ВНУТРИ
-  ChibiVT.model3.json     главный файл модели (его ищет VTube Studio)
-  ChibiVT.moc3            геометрия, деформеры, параметры
-  ChibiVT.physics3.json   физика: корпус догоняет поворот головы
-  ChibiVT.cdi3.json       служебная информация (не обязательна)
+  wardogs.model3.json     главный файл модели (его ищет VTube Studio)
+  wardogs.moc3            геометрия, деформеры, параметры
+  wardogs.physics3.json   физика: корпус догоняет поворот головы
+  wardogs.cdi3.json       служебная информация (не обязательна)
   textures/texture_00.png  текстура персонажа (2048x1024)
   icon.png               иконка модели в списке VTube Studio
 
 КАК УСТАНОВИТЬ
-  1. Скопируйте ВСЮ папку ChibiVT целиком (не отдельные файлы!) в папку
+  1. Скопируйте ВСЮ папку wardogs целиком (не отдельные файлы!) в папку
      Live2DModels вашего VTube Studio. Открыть её можно кнопкой
      «Open Data Folder»/«Open Folder» в настройках VTube Studio
      (Steam-версия), либо вручную:
@@ -35,9 +35,9 @@
     (шестерёнка → Model Movement / VTS Parameter Setup) увеличьте OUT-значения
     у FaceAngleX/Y/Z и MouthOpen.
   • Корпус не двигается — включите Body Angle в настройках модели или
-    увеличьте вес в ChibiVT.physics3.json (поле Weight).
-  • Не нравится физика — удалите ChibiVT.physics3.json и ссылку на него
-    в ChibiVT.model3.json: модель продолжит работать без физики.
+    увеличьте вес в wardogs.physics3.json (поле Weight).
+  • Не нравится физика — удалите wardogs.physics3.json и ссылку на него
+    в wardogs.model3.json: модель продолжит работать без физики.
 
 ПЕРЕСБОРКА (если нужно подправить риг)
   Модель собирается из одного изображения скриптами в каталоге tools/:

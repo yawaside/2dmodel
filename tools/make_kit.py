@@ -92,11 +92,14 @@ def make_icon(atlas_path, out_path, size=512, box=(150, 55, 880, 1023)):
     return out_path
 
 
+NAME = 'wardogs'          # имя модели (совпадает с CFG['name'] в build_model.py)
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--dir', default='dist/ChibiVT')
+    ap.add_argument('--dir', default='dist/%s' % NAME)
     ap.add_argument('--atlas', default='build/texture_atlas.png')
-    ap.add_argument('--zip', default='dist/ChibiVT_vtube_studio.zip')
+    ap.add_argument('--zip', default='dist/%s_vtube_studio.zip' % NAME)
     args = ap.parse_args()
 
     d = args.dir
