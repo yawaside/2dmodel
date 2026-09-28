@@ -1,0 +1,388 @@
+{
+  "schema_version": 1,
+  "name": "ChibiVT · Раскадровка глаз и рта (липсинк)",
+  "kind": "face_storyboard_matches_live2d_rig",
+  "canvas": {
+    "head_rect": [
+      150,
+      60,
+      875,
+      700
+    ],
+    "source": "cutout.png"
+  },
+  "provenance": "Кадры собраны из тайлов текстурного атласа Live2D-модели (tools/rig.py), поэтому совпадают с рендером .moc3 один в один.",
+  "parameters": {
+    "ParamMouthOpenY": {
+      "min": 0,
+      "max": 1,
+      "default": 0,
+      "keys": [
+        0.0,
+        0.12,
+        0.19,
+        0.2,
+        0.38,
+        0.46,
+        0.47,
+        0.66,
+        0.75,
+        0.76,
+        1.0
+      ]
+    },
+    "ParamMouthForm": {
+      "min": -1,
+      "max": 1,
+      "default": 0,
+      "keys": [
+        -1.0,
+        -0.9,
+        -0.5,
+        0.0,
+        0.5,
+        0.9,
+        1.0
+      ]
+    },
+    "ParamEyeLOpen": {
+      "min": 0,
+      "max": 1,
+      "default": 1,
+      "keys": [
+        0.0,
+        0.02,
+        0.1,
+        0.2,
+        0.25,
+        0.5,
+        1.0
+      ]
+    },
+    "ParamEyeROpen": {
+      "min": 0,
+      "max": 1,
+      "default": 1,
+      "keys": [
+        0.0,
+        0.02,
+        0.1,
+        0.2,
+        0.25,
+        0.5,
+        1.0
+      ]
+    },
+    "ParamEyeSmileL": {
+      "min": 0,
+      "max": 1,
+      "default": 0,
+      "keys": [
+        0.0,
+        0.5,
+        0.9,
+        1.0
+      ]
+    },
+    "ParamEyeSmileR": {
+      "min": 0,
+      "max": 1,
+      "default": 0,
+      "keys": [
+        0.0,
+        0.5,
+        0.9,
+        1.0
+      ]
+    }
+  },
+  "mouth_timeline": [
+    {
+      "from": 0.0,
+      "to": 0.12,
+      "kind": "hold",
+      "frame_a": "closed",
+      "frame_b": null
+    },
+    {
+      "from": 0.12,
+      "to": 0.2,
+      "kind": "trans",
+      "frame_a": "closed",
+      "frame_b": "slight"
+    },
+    {
+      "from": 0.2,
+      "to": 0.38,
+      "kind": "hold",
+      "frame_a": "slight",
+      "frame_b": null
+    },
+    {
+      "from": 0.38,
+      "to": 0.47,
+      "kind": "trans",
+      "frame_a": "slight",
+      "frame_b": "half"
+    },
+    {
+      "from": 0.47,
+      "to": 0.66,
+      "kind": "hold",
+      "frame_a": "half",
+      "frame_b": null
+    },
+    {
+      "from": 0.66,
+      "to": 0.76,
+      "kind": "trans",
+      "frame_a": "half",
+      "frame_b": "A_open"
+    },
+    {
+      "from": 0.76,
+      "to": 1.0,
+      "kind": "hold",
+      "frame_a": "A_open",
+      "frame_b": null
+    }
+  ],
+  "eye_timeline": [
+    {
+      "from": 0.0,
+      "to": 0.2,
+      "kind": "trans",
+      "frame_a": "blink",
+      "frame_b": "half"
+    },
+    {
+      "from": 0.2,
+      "to": 0.5,
+      "kind": "trans",
+      "frame_a": "half",
+      "frame_b": "neutral"
+    },
+    {
+      "from": 0.5,
+      "to": 1.0,
+      "kind": "hold",
+      "frame_a": "neutral",
+      "frame_b": null
+    }
+  ],
+  "mouth_frames": [
+    {
+      "id": "closed",
+      "index": 0,
+      "label": "Закрыт",
+      "psd_layer": "BASE (нейтральный рот)",
+      "range": "0.00 – 0.12",
+      "file": "frames/mouth/m00_closed.png"
+    },
+    {
+      "id": "slight",
+      "index": 1,
+      "label": "Слегка приоткрыт",
+      "psd_layer": "M_slight_V1.png",
+      "range": "0.20 – 0.38",
+      "file": "frames/mouth/m01_slight.png"
+    },
+    {
+      "id": "half",
+      "index": 2,
+      "label": "Полуоткрыт",
+      "psd_layer": "M_half_V2.png",
+      "range": "0.47 – 0.66",
+      "file": "frames/mouth/m02_half.png"
+    },
+    {
+      "id": "A_open",
+      "index": 3,
+      "label": "«А» широко открыт",
+      "psd_layer": "M_A_open_V3.png",
+      "range": "0.76 – 1.00",
+      "file": "frames/mouth/m03_A_open.png"
+    },
+    {
+      "id": "smile",
+      "index": 4,
+      "label": "Улыбка (зубы)",
+      "psd_layer": "M_I_grin_V5.png",
+      "range": "Form = +1",
+      "file": "frames/mouth/m04_smile.png"
+    },
+    {
+      "id": "smirk",
+      "index": 5,
+      "label": "Ухмылка",
+      "psd_layer": "M_smirk_V8.png",
+      "range": "Form = −1",
+      "file": "frames/mouth/m05_smirk.png"
+    }
+  ],
+  "eye_frames": [
+    {
+      "id": "neutral",
+      "index": 0,
+      "label": "Нейтральный",
+      "psd_layer": "E_{side}_wide_V4.png",
+      "range": "0.50 – 1.00",
+      "file": "frames/eyes/e00_neutral.png"
+    },
+    {
+      "id": "half",
+      "index": 1,
+      "label": "Полуприкрыт",
+      "psd_layer": "E_{side}_half_V7.png",
+      "range": "0.20 – 0.50",
+      "file": "frames/eyes/e01_half.png"
+    },
+    {
+      "id": "blink",
+      "index": 2,
+      "label": "Закрыт (моргание)",
+      "psd_layer": "E_{side}_blink_V6.png",
+      "range": "0.00 – 0.20",
+      "file": "frames/eyes/e02_blink.png"
+    },
+    {
+      "id": "happy",
+      "index": 3,
+      "label": "Улыбка (арка)",
+      "psd_layer": "E_{side}_happy_V5.png",
+      "range": "Smile = 1",
+      "file": "frames/eyes/e03_happy.png"
+    },
+    {
+      "id": "squint",
+      "index": 4,
+      "label": "Прищур",
+      "psd_layer": "E_{side}_squint_V8.png",
+      "range": "Smile=1, веки≈0 (23%)",
+      "file": "frames/eyes/e04_squint.png"
+    }
+  ],
+  "expressions": [
+    {
+      "id": "smile_combo",
+      "label": "Улыбка",
+      "eyes": "happy",
+      "mouth": "smile",
+      "file": "frames/expressions/x00_smile_combo.png"
+    },
+    {
+      "id": "smirk_combo",
+      "label": "Ухмылка",
+      "eyes": "squint",
+      "mouth": "smirk",
+      "file": "frames/expressions/x01_smirk_combo.png"
+    },
+    {
+      "id": "talk_A",
+      "label": "Говорит «А»",
+      "eyes": "neutral",
+      "mouth": "A_open",
+      "file": "frames/expressions/x02_talk_A.png"
+    },
+    {
+      "id": "blink_rest",
+      "label": "Моргает (покой)",
+      "eyes": "blink",
+      "mouth": "closed",
+      "file": "frames/expressions/x03_blink_rest.png"
+    }
+  ],
+  "sprite_sheets": [
+    {
+      "file": "mouth_sprite_sheet.png",
+      "tiles": 6,
+      "columns": 3
+    },
+    {
+      "file": "eyes_sprite_sheet.png",
+      "tiles": 10,
+      "columns": 5
+    }
+  ],
+  "interactive": {
+    "head": "tiles/head_base.png",
+    "mouth_tiles": [
+      "tiles/mouth_0.png",
+      "tiles/mouth_1.png",
+      "tiles/mouth_2.png",
+      "tiles/mouth_3.png",
+      "tiles/mouth_4.png",
+      "tiles/mouth_5.png"
+    ],
+    "eye_tiles": {
+      "L": [
+        "tiles/eye_0_neutral.png",
+        "tiles/eye_0_half.png",
+        "tiles/eye_0_blink.png",
+        "tiles/eye_0_happy.png",
+        "tiles/eye_0_squint.png"
+      ],
+      "R": [
+        "tiles/eye_1_neutral.png",
+        "tiles/eye_1_half.png",
+        "tiles/eye_1_blink.png",
+        "tiles/eye_1_happy.png",
+        "tiles/eye_1_squint.png"
+      ]
+    },
+    "boxes": {
+      "head_rect": [
+        150,
+        60,
+        875,
+        700
+      ],
+      "mouth_box": [
+        382,
+        525,
+        616,
+        668
+      ],
+      "eye_boxes": [
+        [
+          307,
+          344,
+          533,
+          525
+        ],
+        [
+          481,
+          344,
+          713,
+          525
+        ]
+      ]
+    },
+    "note": "Тайлы и геометрия для покадрового блендинга в браузере — та же математика, что в .moc3 (mouth_blend/eye_blend/stack_opa)."
+  },
+  "animations": [
+    {
+      "file": "lipsync_demo.gif",
+      "what": "реальный блендинг ParamMouthOpenY 0→1→0 + улыбка/ухмылка"
+    },
+    {
+      "file": "blink_cycle.gif",
+      "what": "цикл моргания ParamEyeLOpen/R 1→0→1"
+    },
+    {
+      "file": "expressions.gif",
+      "what": "ParamMouthForm −1…+1, глаза следуют"
+    }
+  ],
+  "downloads": {
+    "boards": "boards/",
+    "pdf": "storyboard_boards.pdf",
+    "csv": "storyboard.csv",
+    "psd": "ChibiVT_face_storyboard.psd",
+    "zip": "ChibiVT_face_storyboard.zip"
+  },
+  "source_sha256": {
+    "cutout.png": "3eca34ec0872aae8433e9d2aaed6fb2227f069998cd10f0038e5f08a02e08326",
+    "atlas": "488574913bfe9c865cebbc3821e224f73d561960427b49289aff436aa3232a68"
+  }
+}

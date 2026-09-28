@@ -1,0 +1,16 @@
+﻿group,frame,label,file,psd_layer,parameter,range
+mouth,0,Закрыт,frames/mouth/m00_closed.png,BASE (нейтральный рот),ParamMouthOpenY,0.00 – 0.12
+mouth,1,Слегка приоткрыт,frames/mouth/m01_slight.png,M_slight_V1.png,ParamMouthOpenY,0.20 – 0.38
+mouth,2,Полуоткрыт,frames/mouth/m02_half.png,M_half_V2.png,ParamMouthOpenY,0.47 – 0.66
+mouth,3,«А» широко открыт,frames/mouth/m03_A_open.png,M_A_open_V3.png,ParamMouthOpenY,0.76 – 1.00
+mouth,4,Улыбка (зубы),frames/mouth/m04_smile.png,M_I_grin_V5.png,ParamMouthForm,Form = +1
+mouth,5,Ухмылка,frames/mouth/m05_smirk.png,M_smirk_V8.png,ParamMouthForm,Form = −1
+eyes,0,Нейтральный,frames/eyes/e00_neutral.png,E_L_wide_V4.png + E_R_wide_V4.png,ParamEyeLOpen/R,0.50 – 1.00
+eyes,1,Полуприкрыт,frames/eyes/e01_half.png,E_L_half_V7.png + E_R_half_V7.png,ParamEyeLOpen/R,0.20 – 0.50
+eyes,2,Закрыт (моргание),frames/eyes/e02_blink.png,E_L_blink_V6.png + E_R_blink_V6.png,ParamEyeLOpen/R,0.00 – 0.20
+eyes,3,Улыбка (арка),frames/eyes/e03_happy.png,E_L_happy_V5.png + E_R_happy_V5.png,ParamEyeSmileL/R,Smile = 1
+eyes,4,Прищур,frames/eyes/e04_squint.png,E_L_squint_V8.png + E_R_squint_V8.png,ParamEyeSmileL/R,"Smile=1, веки≈0 (23%)"
+expressions,0,Улыбка,frames/expressions/x00_smile_combo.png,combo,combo,eyes=happy mouth=smile
+expressions,1,Ухмылка,frames/expressions/x01_smirk_combo.png,combo,combo,eyes=squint mouth=smirk
+expressions,2,Говорит «А»,frames/expressions/x02_talk_A.png,combo,combo,eyes=neutral mouth=A_open
+expressions,3,Моргает (покой),frames/expressions/x03_blink_rest.png,combo,combo,eyes=blink mouth=closed

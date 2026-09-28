@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f5f0">
+  <title>Chibi Studio — раскадровка глаз и рта · липсинк</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="blend.js"></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="../turnaround/">chibi<span class="brand-light">studio</span></a>
+    <div class="breadcrumb">Проекты <span>/</span> <b>Chibi soldier</b> <span class="version">FACE STORYBOARD V1</span></div>
+    <nav class="topnav">
+      <a class="outline-button" href="../turnaround/">Ракурсы</a>
+      <a class="outline-button" href="../preview/">Live2D превью <span aria-hidden="true">↗</span></a>
+    </nav>
+  </header>
+
+  <div class="workspace">
+    <aside class="sidebar">
+      <div class="side-title">РАСКАДРОВКА ЛИЦА</div>
+      <nav aria-label="Разделы">
+        <button class="nav-item active" data-tab="mouth"><span class="dot dot-mouth"></span>Рот · липсинк</button>
+        <button class="nav-item" data-tab="eyes"><span class="dot dot-eyes"></span>Глаза · моргание</button>
+        <button class="nav-item" data-tab="anims"><span class="dot dot-anims"></span>Анимации</button>
+        <button class="nav-item" data-tab="data"><span class="dot dot-data"></span>Данные и файлы</button>
+      </nav>
+      <div class="sidebar-rule"></div>
+      <div class="side-title">ПРОЕКТ</div>
+      <div class="project-card">
+        <div class="project-avatar"><img src="pack/tiles/head_base.png" alt=""></div>
+        <div><b>Chibi soldier</b><span>лицевые кадры = тайлы .moc3</span></div>
+      </div>
+      <div class="sidebar-bottom">
+        <div class="ready-mark"><span></span>Пакет собран из атласа модели</div>
+        <p>Кадры раскадровки пиксель-в-пиксель<br>совпадают с рендером Live2D.</p>
+      </div>
+    </aside>
+
+    <main>
+      <div class="page-heading">
+        <div>
+          <div class="eyebrow">FACE STORYBOARD / 02</div>
+          <h1 id="page-title">Раскадровка глаз и рта<span>.</span></h1>
+          <p id="page-subtitle">Живой блендинг той же математики, что внутри .moc3 — двигайте параметры как в VTube Studio.</p>
+        </div>
+        <a class="primary-button" href="pack/ChibiVT_face_storyboard.zip" download>Скачать пакет<span class="file-tag">ZIP</span></a>
+      </div>
+
+      <div id="error" class="error" role="alert" hidden></div>
+
+      <!-- ============ РОТ ============ -->
+      <section id="tab-mouth" class="tab-page">
+        <div class="panel-grid">
+          <div class="panel live-panel">
+            <h2><span class="live-badge">LIVE</span> Липсинк · <code>ParamMouthOpenY</code> + <code>ParamMouthForm</code></h2>
+            <canvas id="mouth-canvas" class="face-canvas" width="725" height="640"></canvas>
+            <div class="slider-row">
+              <label>ParamMouthOpenY <output id="out-open">0.00</output></label>
+              <input type="range" id="sl-open" min="0" max="1" step="0.01" value="0">
+            </div>
+            <div class="slider-row">
+              <label>ParamMouthForm <output id="out-form">0.00</output></label>
+              <input type="range" id="sl-form" min="-1" max="1" step="0.01" value="0">
+            </div>
+            <div class="preset-row" id="mouth-presets">
+              <button data-open="0"    data-form="0">Закрыт</button>
+              <button data-open="0.29" data-form="0">Слегка</button>
+              <button data-open="0.56" data-form="0">Полуоткрыт</button>
+              <button data-open="0.9"  data-form="0">«А»</button>
+              <button data-open="0.14" data-form="1">Улыбка</button>
+              <button data-open="0.14" data-form="-1">Ухмылка</button>
+            </div>
+            <div class="weights" id="mouth-weights"></div>
+            <p class="hint">Кадры открываются одной цепочкой <b>закрыт → слегка → полуоткрыт → «А»</b>; одновременно смешано не более двух соседних — поэтому переходы плавные, без «двойного рта».</p>
+          </div>
+          <div class="panel">
+            <h2>Лист раскадровки</h2>
+            <a href="pack/boards/mouth_board.png" target="_blank" rel="noopener">
+              <img class="board-img" src="pack/boards/mouth_board.png" alt="Лист раскадровки рта">
+            </a>
+            <h2>Кадры</h2>
+            <div class="thumb-strip" id="mouth-thumbs"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ ГЛАЗА ============ -->
+      <section id="tab-eyes" class="tab-page" hidden>
+        <div class="panel-grid">
+          <div class="panel live-panel">
+            <h2><span class="live-badge">LIVE</span> Моргание · <code>ParamEyeLOpen/R</code> + <code>ParamEyeSmileL/R</code></h2>
+            <canvas id="eye-canvas" class="face-canvas" width="725" height="640"></canvas>
+            <div class="slider-row">
+              <label>ParamEyeLOpen <output id="out-el">1.00</output></label>
+              <input type="range" id="sl-el" min="0" max="1" step="0.01" value="1">
+            </div>
+            <div class="slider-row">
+              <label>ParamEyeROpen <output id="out-er">1.00</output></label>
+              <input type="range" id="sl-er" min="0" max="1" step="0.01" value="1">
+            </div>
+            <div class="slider-row">
+              <label>ParamEyeSmileL/R <output id="out-sm">0.00</output></label>
+              <input type="range" id="sl-sm" min="0" max="1" step="0.01" value="0">
+            </div>
+            <div class="preset-row">
+              <button id="btn-blink">▲ Авто-моргание</button>
+              <button id="btn-smile" data-sm="1">Улыбка глазами</button>
+              <button id="btn-reset-eyes" data-sm="0">Сброс</button>
+            </div>
+            <p class="hint">Моргание в VTube Studio — быстрый проход <b>1 → 0 → 1</b> (~0.15 с); глаза проходят кадры <b>нейтраль → полуприкрыт → закрыт</b> и обратно. Улыбка заменяет открытый глаз «аркой».</p>
+          </div>
+          <div class="panel">
+            <h2>Лист раскадровки</h2>
+            <a href="pack/boards/eye_board.png" target="_blank" rel="noopener">
+              <img class="board-img" src="pack/boards/eye_board.png" alt="Лист раскадровки глаз">
+            </a>
+            <h2>Кадры</h2>
+            <div class="thumb-strip" id="eye-thumbs"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ АНИМАЦИИ ============ -->
+      <section id="tab-anims" class="tab-page" hidden>
+        <div class="anim-grid">
+          <figure class="panel anim-card">
+            <h2>Липсинк 0→1→0 + улыбка/ухмылка</h2>
+            <img src="pack/lipsync_demo.gif" alt="Демонстрация липсинка">
+            <figcaption>Реальный блендинг модели: цепочка кадров и crossfade <code>ParamMouthForm</code>.</figcaption>
+          </figure>
+          <figure class="panel anim-card">
+            <h2>Цикл моргания</h2>
+            <img src="pack/blink_cycle.gif" alt="Цикл моргания">
+            <figcaption>Проход <code>ParamEyeLOpen/R</code> 1 → 0 → 1 по нарисованным векам.</figcaption>
+          </figure>
+          <figure class="panel anim-card">
+            <h2>Улыбка ↔ ухмылка</h2>
+            <img src="pack/expressions.gif" alt="Улыбка и ухмылка">
+            <figcaption><code>ParamMouthForm</code> −1…+1; глаза подхватывают улыбку (физика модели).</figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <!-- ============ ДАННЫЕ ============ -->
+      <section id="tab-data" class="tab-page" hidden>
+        <div class="panel wide-panel">
+          <h2>Шкала рта · <code>ParamMouthOpenY</code></h2>
+          <div class="timeline" id="timeline-mouth"></div>
+          <h2>Шкала глаз · <code>ParamEyeLOpen/R</code></h2>
+          <div class="timeline" id="timeline-eyes"></div>
+        </div>
+        <div class="panel wide-panel">
+          <h2>Файлы пакета</h2>
+          <div class="file-grid">
+            <a class="file-chip" href="pack/storyboard_boards.pdf">📄 storyboard_boards.pdf</a>
+            <a class="file-chip" href="pack/storyboard.csv">📄 storyboard.csv</a>
+            <a class="file-chip" href="pack/manifest.json">📄 manifest.json</a>
+            <a class="file-chip" href="pack/ChibiVT_face_storyboard.psd">📄 face_storyboard.psd</a>
+            <a class="file-chip" href="pack/mouth_sprite_sheet.png">📄 mouth_sprite_sheet.png</a>
+            <a class="file-chip" href="pack/eyes_sprite_sheet.png">📄 eyes_sprite_sheet.png</a>
+            <a class="file-chip" href="pack/README.md">📄 README.md</a>
+            <a class="file-chip" href="../dist/ChibiVT_vtube_studio.zip">⭐ Готовая модель VTube Studio</a>
+          </div>
+          <h2>Кадры → параметры (из CSV)</h2>
+          <div class="table-wrap"><table id="csv-table"></table></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <footer class="foot">Кадры собраны из тайлов текстурного атласа Live2D-модели (tools/rig.py) · блендинг в браузере = математика .moc3 · Chibi Studio</footer>
+</body>
+</html>

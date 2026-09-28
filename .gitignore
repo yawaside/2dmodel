@@ -7,3 +7,6 @@ build/
 __pycache__/
 *.pyc
 preview/atlas_preview.png
+
+# playwright scratch (не нужен для сборки/тестов)
+node_modules/
