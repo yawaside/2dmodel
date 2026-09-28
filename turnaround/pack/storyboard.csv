@@ -1,0 +1,9 @@
+﻿frame,time_ms,angle_degrees,label,file,status,pivot_x,pivot_y
+1,0,0,Спереди,frames/01_000_front.png,ai_reference,384,974
+2,500,45,Спереди ¾ · влево,frames/02_045_front_left.png,mirror_draft,384,974
+3,1000,90,Профиль · влево,frames/03_090_profile_left.png,ai_reference,384,974
+4,1500,135,Сзади ¾ · влево,frames/04_135_back_left.png,mirror_draft,384,974
+5,2000,180,Сзади,frames/05_180_back.png,ai_reference,384,974
+6,2500,225,Сзади ¾ · вправо,frames/06_225_back_right.png,ai_reference,384,974
+7,3000,270,Профиль · вправо,frames/07_270_profile_right.png,mirror_draft,384,974
+8,3500,315,Спереди ¾ · вправо,frames/08_315_front_right.png,ai_reference,384,974
