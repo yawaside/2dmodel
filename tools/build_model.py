@@ -90,6 +90,13 @@ CFG = dict(
     mouth_keys=(0.0, 0.12, 0.19, 0.2, 0.38, 0.46, 0.47, 0.66, 0.75, 0.76, 1.0),
     mouth_form_keys=(-1.0, -0.9, -0.5, 0.0, 0.5, 0.9, 1.0),
     eye_smile_keys=(0.0, 0.5, 0.9, 1.0),
+    # pseudo-3D self-shadow / rim-light overlay (see build_shade_textures) ---
+    shade_dark_rgb=(24.0, 17.0, 20.0),
+    shade_light_rgb=(255.0, 248.0, 226.0),
+    shade_dark_max=0.42,
+    shade_light_max=0.20,
+    shade_yaw_max_deg=30.0,
+    shade_pitch_max_deg=22.0,
 )
 
 
@@ -207,6 +214,68 @@ def box_rows_cols(rect, step):
     x0, y0, x1, y1 = rect
     return (max(2, int(round((y1 - y0) / float(step)))),
             max(2, int(round((x1 - x0) / float(step)))))
+
+
+# --------------------------------------------------------------------------- #
+# pseudo-3D shading (self-shadow / rim-light on head turn)
+# --------------------------------------------------------------------------- #
+
+def build_shade_texture(alpha_full, head_rect, axis, cfg=CFG):
+    """Build one RGBA image, cropped to `head_rect`, that is half a soft
+    warm rim-LIGHT and half a soft dark self-SHADOW along `axis` ('x' or 'y').
+
+    Used twice by the model: once as-is, once with the U/V mirrored - that
+    single texture then drives the shading for BOTH turn directions of that
+    axis (turn one way -> light/dark sit on their drawn side; turn the other
+    way -> the mirrored UV puts them on the opposite side automatically).
+    This gives a cheap but effective "the head is a rounded volume, not a
+    flat sticker" cue without needing any new hand-drawn art layers.
+    """
+    x0, y0, x1, y1 = [int(round(v)) for v in head_rect]
+    w, h = x1 - x0, y1 - y0
+    sub_alpha_bool = alpha_full[y0:y1, x0:x1]
+    sub_alpha = sub_alpha_bool.astype(np.float32)
+
+    # head_rect is padded well beyond the actual drawn silhouette (it's sized
+    # for the warp-deformer control grid); normalise the shading ramp against
+    # the TIGHT bbox of the actual art instead, or the gradient's "hot" end
+    # would fall entirely in the empty margin and the effect would vanish.
+    cols = np.where(sub_alpha_bool.any(axis=0))[0]
+    rows = np.where(sub_alpha_bool.any(axis=1))[0]
+    cx0, cx1 = (int(cols.min()), int(cols.max())) if len(cols) else (0, w - 1)
+    cy0, cy1 = (int(rows.min()), int(rows.max())) if len(rows) else (0, h - 1)
+
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+    if axis == "x":
+        t = (xx - cx0) / max(1, cx1 - cx0)
+    else:
+        t = (yy - cy0) / max(1, cy1 - cy0)
+    t = np.clip(t, 0.0, 1.0)
+
+    # left/top half -> light ramp (strong at the outer edge, 0 at centre)
+    light = np.clip((0.42 - t) / 0.40, 0.0, 1.0)
+    light = light * light * (3.0 - 2.0 * light)
+    # right/bottom half -> dark ramp (0 at centre, strong at the outer edge)
+    dark = np.clip((t - 0.46) / 0.42, 0.0, 1.0)
+    dark = dark * dark * (3.0 - 2.0 * dark)
+
+    dark_rgb = np.array(cfg["shade_dark_rgb"], np.float32)
+    light_rgb = np.array(cfg["shade_light_rgb"], np.float32)
+    a_dark = dark * cfg["shade_dark_max"]
+    a_light = light * cfg["shade_light_max"]
+    a = np.clip(a_dark + a_light, 0.0, 1.0)
+    # blend colour by relative weight where both would be ~0 it doesn't matter
+    denom = np.maximum(a_dark + a_light, 1e-6)
+    rgb = (dark_rgb[None, None, :] * a_dark[..., None] + light_rgb[None, None, :] * a_light[..., None]) / denom[..., None]
+
+    a = a * sub_alpha  # respect the character silhouette (feathered edges included)
+    # soften the whole mask a touch so it reads as light/shadow, not a hard band
+    a_img = Image.fromarray((np.clip(a, 0, 1) * 255).astype(np.uint8))
+    a_img = a_img.filter(ImageFilter.GaussianBlur(radius=max(w, h) * 0.006 + 1.5))
+    a = np.array(a_img, np.float32) / 255.0
+
+    out = np.concatenate([rgb, a[..., None] * 255.0], axis=-1)
+    return np.clip(out, 0, 255).astype(np.uint8)
 
 
 # --------------------------------------------------------------------------- #
@@ -378,6 +447,42 @@ def build(geom_path, meta_path, atlas_path, outdir, cfg=CFG):
     print("head mesh : %d verts / %d tris" % (len(head_verts), len(head_tris)))
     print("body mesh : %d verts / %d tris" % (len(body_verts), len(body_tris)))
 
+    # ---------------- pseudo-3D shading textures ---------------------------- #
+    # Two small overlay images (cropped to head_rect) get baked into unused
+    # atlas space; each is reused twice (once mirrored) so the head reads as
+    # a rounded volume instead of a flat cut-out while turning/nodding.
+    hx0, hy0, hx1, hy1 = [int(round(v)) for v in cfg["head_rect"]]
+    shade_w, shade_h = hx1 - hx0, hy1 - hy0
+    SHADE_YAW_ORIGIN = (0, int(cfg["canvas_px"]) + 4)
+    SHADE_PITCH_ORIGIN = (shade_w + 8, int(cfg["canvas_px"]) + 4)
+    assert SHADE_PITCH_ORIGIN[0] + shade_w <= AW, "atlas too narrow for shade textures"
+    assert SHADE_YAW_ORIGIN[1] + shade_h <= AH, "atlas too short for shade textures"
+
+    yaw_tex = build_shade_texture(alpha, cfg["head_rect"], "x", cfg)
+    pitch_tex = build_shade_texture(alpha, cfg["head_rect"], "y", cfg)
+    atlas[SHADE_YAW_ORIGIN[1]:SHADE_YAW_ORIGIN[1] + shade_h,
+          SHADE_YAW_ORIGIN[0]:SHADE_YAW_ORIGIN[0] + shade_w] = yaw_tex
+    atlas[SHADE_PITCH_ORIGIN[1]:SHADE_PITCH_ORIGIN[1] + shade_h,
+          SHADE_PITCH_ORIGIN[0]:SHADE_PITCH_ORIGIN[0] + shade_w] = pitch_tex
+
+    def shade_uv(origin, mirror_axis):
+        ox, oy = origin
+
+        def f(px, py):
+            lx = clamp(px - hx0, 0.0, shade_w - 1.0)
+            ly = clamp(py - hy0, 0.0, shade_h - 1.0)
+            if mirror_axis == "x":
+                lx = shade_w - 1.0 - lx
+            elif mirror_axis == "y":
+                ly = shade_h - 1.0 - ly
+            return ((ox + lx) / AW, (oy + ly) / AH)
+        return f
+
+    shade_yaw_uv_normal = shade_uv(SHADE_YAW_ORIGIN, None)
+    shade_yaw_uv_mirror = shade_uv(SHADE_YAW_ORIGIN, "x")
+    shade_pitch_uv_normal = shade_uv(SHADE_PITCH_ORIGIN, None)
+    shade_pitch_uv_mirror = shade_uv(SHADE_PITCH_ORIGIN, "y")
+
     # Eye meshes: all eye variants use identical mesh over eye rig box
     eye_meshes = []
     for i, e in enumerate(meta["eyes"]):
@@ -486,6 +591,30 @@ def build(geom_path, meta_path, atlas_path, outdir, cfg=CFG):
                    uvs=[(p[0] / AW, p[1] / AH) for p in head_verts], tris=head_tris,
                    draw_order=200, parent_part=2, parent_deformer=1)
 
+    # ---- pseudo-3D shading: soft self-shadow + rim-light that fades in with
+    # head turn/tilt, drawn on the same mesh as Head (so it tracks the warp
+    # perfectly) but below the mouth/eyes so those stay crisp and readable.
+    yaw_max = cfg["shade_yaw_max_deg"]
+    pitch_max = cfg["shade_pitch_max_deg"]
+
+    def make_shade_opa(getter, limit):
+        def f(st):
+            v = getter(st)
+            return clamp(v, 0.0, limit) / limit
+        return f
+
+    shade_defs = [
+        ("ShadeYawPos", shade_yaw_uv_normal, lambda st: st.get("ParamAngleX", 0.0), yaw_max, "ParamAngleX"),
+        ("ShadeYawNeg", shade_yaw_uv_mirror, lambda st: -st.get("ParamAngleX", 0.0), yaw_max, "ParamAngleX"),
+        ("ShadePitchPos", shade_pitch_uv_mirror, lambda st: st.get("ParamAngleY", 0.0), pitch_max, "ParamAngleY"),
+        ("ShadePitchNeg", shade_pitch_uv_normal, lambda st: -st.get("ParamAngleY", 0.0), pitch_max, "ParamAngleY"),
+    ]
+    for sid, uv_fn, getter, limit, pid in shade_defs:
+        b.add_art_mesh(id=sid, verts=[head_local(*p) for p in head_verts],
+                       uvs=[uv_fn(*p) for p in head_verts], tris=head_tris,
+                       draw_order=250, parent_part=2, parent_deformer=1,
+                       params=[pid], opa_fn=make_shade_opa(getter, limit))
+
     # ---- mouth: alpha-blended storyboard with vowel shapes, controlled by MouthOpenY + MouthForm
     def make_mouth_opa(i):
         def f(st):
@@ -537,7 +666,9 @@ def build(geom_path, meta_path, atlas_path, outdir, cfg=CFG):
     # ---------------- side files -------------------------------------------- #
     tex_dir = os.path.join(outdir, "textures")
     os.makedirs(tex_dir, exist_ok=True)
-    Image.open(atlas_path).save(os.path.join(tex_dir, "texture_00.png"))
+    # `atlas` has the baked-in shading tiles pasted in above - write THAT out,
+    # not a straight copy of the atlas.png rig.py produced.
+    Image.fromarray(atlas.astype(np.uint8)).save(os.path.join(tex_dir, "texture_00.png"))
 
     name = cfg["name"]
     model3 = {
