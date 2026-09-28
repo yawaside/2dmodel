@@ -109,9 +109,15 @@ def main():
 
     zpath = args.zip
     os.makedirs(os.path.dirname(zpath) or '.', exist_ok=True)
+    # rig_web.json is only consumed by the in-repo browser preview
+    # (preview/live.html) - VTube Studio never reads it, keep it out of the
+    # distributable zip.
+    skip = {'rig_web.json'}
     with zipfile.ZipFile(zpath, 'w', zipfile.ZIP_DEFLATED) as z:
         for root, _, files in os.walk(d):
             for fn in sorted(files):
+                if fn in skip:
+                    continue
                 p = os.path.join(root, fn)
                 z.write(p, os.path.join(name, os.path.relpath(p, d)))
     print('kit      : %s' % d)

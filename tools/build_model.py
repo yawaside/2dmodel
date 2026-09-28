@@ -679,7 +679,7 @@ def build(geom_path, meta_path, atlas_path, outdir, cfg=CFG):
         "atlas_size": [AW, AH],
         "texture": "texture_00.png",
         "cfg": {k: cfg[k] for k in (
-            "cut_y", "head_center", "neck_point", "r_yaw", "r_pitch",
+            "cut_y", "head_fade", "head_center", "neck_point", "r_yaw", "r_pitch",
             "yaw_scale", "pitch_scale", "roll_scale", "body_shift_x",
             "body_shift_y", "body_roll_deg", "body_hip", "angle_range",
             "body_range", "shade_yaw_max_deg", "shade_pitch_max_deg",

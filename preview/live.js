@@ -264,6 +264,11 @@ async function init() {
 
   const W = rig.canvas_px;
   const C = rig.cfg;
+  const REQUIRED_CFG = ['cut_y', 'head_fade', 'head_center', 'neck_point', 'r_yaw', 'r_pitch',
+    'yaw_scale', 'pitch_scale', 'roll_scale', 'body_shift_x', 'body_shift_y', 'body_roll_deg',
+    'body_hip', 'shade_yaw_max_deg', 'shade_pitch_max_deg'];
+  const missing = REQUIRED_CFG.filter(k => C[k] === undefined);
+  if (missing.length) throw new Error('rig_web.json: cfg missing keys: ' + missing.join(', '));
 
   const head = makeGroup(rig.head.verts, rig.head.tris, {
     base: rig.head.uv,
