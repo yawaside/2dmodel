@@ -1,0 +1,288 @@
+{
+ "schema_version": 1,
+ "name": "ChibiVT · интерактивный предпросмотр VTube Studio",
+ "kind": "vtube_studio_preview_matches_live2d_rig",
+ "provenance": "Ассеты — кропы cutout.png и тайлы атласа модели (tools/rig.py); деформация в браузере — порт head_warp/body_warp и сеточных деформеров из tools/build_model.py. Модель .moc3 не меняется.",
+ "canvas": {
+  "size": 1024,
+  "head_rect": [
+   150,
+   60,
+   875,
+   700
+  ],
+  "body_rect": [
+   150,
+   700,
+   875,
+   1024
+  ],
+  "cut_y": 700.0
+ },
+ "deformers": {
+  "head": {
+   "rect": [
+    150.0,
+    60.0,
+    875.0,
+    700.0
+   ],
+   "rows": 6,
+   "cols": 6
+  },
+  "body": {
+   "rect": [
+    150.0,
+    60.0,
+    875.0,
+    1024.0
+   ],
+   "rows": 5,
+   "cols": 5
+  }
+ },
+ "rig": {
+  "head_fade": 130.0,
+  "head_center": [
+   515.0,
+   420.0
+  ],
+  "neck_point": [
+   515.0,
+   560.0
+  ],
+  "r_yaw": 245.0,
+  "r_pitch": 270.0,
+  "v_max": 0.9682458365518543,
+  "yaw_scale": 0.55,
+  "pitch_scale": 0.45,
+  "roll_scale": 0.5,
+  "body_shift_x": 42.0,
+  "body_shift_y": 16.0,
+  "body_roll_deg": 5.0,
+  "body_hip": [
+   512.0,
+   1010.0
+  ]
+ },
+ "browser_mesh": {
+  "step": 10,
+  "dilate_steps": 2,
+  "note": "сетка для warp-рендера в WebGL: шаг в пикселях исходника"
+ },
+ "boxes": {
+  "head_rect": [
+   150,
+   60,
+   875,
+   700
+  ],
+  "mouth_box": [
+   382.0,
+   525.0,
+   616.0,
+   668.0
+  ],
+  "eye_boxes": [
+   [
+    307.0,
+    344.0,
+    533.0,
+    525.0
+   ],
+   [
+    481.0,
+    344.0,
+    713.0,
+    525.0
+   ]
+  ]
+ },
+ "files": {
+  "head": "tiles/head_base.png",
+  "body": "tiles/body_base.png",
+  "mouth_tiles": [
+   "tiles/mouth_0.png",
+   "tiles/mouth_1.png",
+   "tiles/mouth_2.png",
+   "tiles/mouth_3.png",
+   "tiles/mouth_4.png",
+   "tiles/mouth_5.png"
+  ],
+  "eye_tiles": {
+   "L": [
+    "tiles/eye_0_neutral.png",
+    "tiles/eye_0_half.png",
+    "tiles/eye_0_blink.png",
+    "tiles/eye_0_happy.png",
+    "tiles/eye_0_squint.png"
+   ],
+   "R": [
+    "tiles/eye_1_neutral.png",
+    "tiles/eye_1_half.png",
+    "tiles/eye_1_blink.png",
+    "tiles/eye_1_happy.png",
+    "tiles/eye_1_squint.png"
+   ]
+  }
+ },
+ "mouth_variants": [
+  "closed",
+  "slight",
+  "half",
+  "A_open",
+  "smile",
+  "smirk"
+ ],
+ "eye_variants": [
+  "neutral",
+  "half",
+  "blink",
+  "happy",
+  "squint"
+ ],
+ "parameters": [
+  {
+   "id": "ParamAngleX",
+   "min": -30.0,
+   "max": 30.0,
+   "default": 0.0,
+   "group": "Углы",
+   "label": "поворот головы (рысканье)",
+   "vts": "FaceAngle Yaw — трекинг лица или мыши"
+  },
+  {
+   "id": "ParamAngleY",
+   "min": -30.0,
+   "max": 30.0,
+   "default": 0.0,
+   "group": "Углы",
+   "label": "наклон головы (тангаж)",
+   "vts": "FaceAngle Pitch — трекинг лица или мыши"
+  },
+  {
+   "id": "ParamAngleZ",
+   "min": -30.0,
+   "max": 30.0,
+   "default": 0.0,
+   "group": "Углы",
+   "label": "крен головы",
+   "vts": "FaceAngle Roll — трекинг лица или мыши"
+  },
+  {
+   "id": "ParamBodyAngleX",
+   "min": -10.0,
+   "max": 10.0,
+   "default": 0.0,
+   "group": "Корпус",
+   "label": "корпус по X",
+   "vts": "обычно ведёт физика (PhysicsSetting1)"
+  },
+  {
+   "id": "ParamBodyAngleY",
+   "min": -10.0,
+   "max": 10.0,
+   "default": 0.0,
+   "group": "Корпус",
+   "label": "корпус по Y",
+   "vts": "обычно ведёт физика (PhysicsSetting2)"
+  },
+  {
+   "id": "ParamBodyAngleZ",
+   "min": -10.0,
+   "max": 10.0,
+   "default": 0.0,
+   "group": "Корпус",
+   "label": "крен корпуса",
+   "vts": "обычно ведёт физика"
+  },
+  {
+   "id": "ParamEyeLOpen",
+   "min": 0.0,
+   "max": 1.0,
+   "default": 1.0,
+   "group": "Глаза",
+   "label": "левый глаз закрыт ↔ открыт",
+   "vts": "группа EyeBlink — авто-моргание VTube Studio"
+  },
+  {
+   "id": "ParamEyeROpen",
+   "min": 0.0,
+   "max": 1.0,
+   "default": 1.0,
+   "group": "Глаза",
+   "label": "правый глаз закрыт ↔ открыт",
+   "vts": "группа EyeBlink — авто-моргание VTube Studio"
+  },
+  {
+   "id": "ParamEyeSmileL",
+   "min": 0.0,
+   "max": 1.0,
+   "default": 0.0,
+   "group": "Глаза",
+   "label": "левый глаз «аркой»",
+   "vts": "экспрессии/физика (PhysicsSetting3)"
+  },
+  {
+   "id": "ParamEyeSmileR",
+   "min": 0.0,
+   "max": 1.0,
+   "default": 0.0,
+   "group": "Глаза",
+   "label": "правый глаз «аркой»",
+   "vts": "экспрессии/физика (PhysicsSetting3)"
+  },
+  {
+   "id": "ParamMouthOpenY",
+   "min": 0.0,
+   "max": 1.0,
+   "default": 0.0,
+   "group": "Рот",
+   "label": "открытие рта",
+   "vts": "группа LipSync — липсинк с микрофона"
+  },
+  {
+   "id": "ParamMouthForm",
+   "min": -1.0,
+   "max": 1.0,
+   "default": 0.0,
+   "group": "Рот",
+   "label": "−1 ухмылка … +1 улыбка",
+   "vts": "экспрессии + лёгкий довод физикой (PhysicsSetting4)"
+  },
+  {
+   "id": "ParamBreath",
+   "min": 0.0,
+   "max": 1.0,
+   "default": 0.0,
+   "group": "Дыхание",
+   "label": "вдох/выдох",
+   "vts": "группа Breath — включается в VTube Studio"
+  }
+ ],
+ "vts_groups": [
+  {
+   "name": "EyeBlink",
+   "ids": [
+    "ParamEyeLOpen",
+    "ParamEyeROpen"
+   ]
+  },
+  {
+   "name": "LipSync",
+   "ids": [
+    "ParamMouthOpenY"
+   ]
+  },
+  {
+   "name": "Breath",
+   "ids": [
+    "ParamBreath"
+   ]
+  }
+ ],
+ "source_sha256": {
+  "cutout.png": "3eca34ec0872aae8433e9d2aaed6fb2227f069998cd10f0038e5f08a02e08326",
+  "atlas": "488574913bfe9c865cebbc3821e224f73d561960427b49289aff436aa3232a68"
+ }
+}
