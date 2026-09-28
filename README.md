@@ -1,6 +1,38 @@
 # Live2D-модель для VTube Studio (готова к использованию)
 
-## Новое: ракурсы полного роста и раскадровка
+## Новое: раскадровка глаз и рта для липсинка
+
+Добавлен пакет **face storyboard** — нарисованные кадры глаз и рта, шкалы
+параметров и живой интерактивный просмотрщик. Существующая модель `.moc3`
+не менялась: пакет собран из **тех же тайлов текстурного атласа**, которыми
+рисуется модель, поэтому каждый кадр раскадровки пиксель-в-пиксель совпадает
+с тем, что рендерит Live2D.
+
+- 6 кадров рта (липсинк: закрыт → слегка → полуоткрыт → «А» + улыбка/ухмылка)
+  и 5 состояний глаз (моргание, улыбка, прищур) с зонами hold/transition.
+- Листы раскадровки со шкалами `ParamMouthOpenY` / `ParamMouthForm` /
+  `ParamEyeLOpen·R` / `ParamEyeSmileL·R`, кадры на голове, спрайт-листы.
+- Живые GIF: липсинк 0→1→0, цикл моргания, улыбка ↔ ухмылка — **реальный
+  блендинг модели**, а не коллаж.
+- Интерактивный просмотрщик **`/storyboard/`**: ползунки тех же параметров,
+  что и в VTube Studio; блендинг в браузере — точный порт математики `.moc3`
+  (сверяется юнит-тестом JS ↔ Python). Cubism Core не требуется.
+- CSV + machine-readable `manifest.json` (все зоны переходов), PSD со слоем
+  на каждый кадр, ZIP всего пакета.
+
+Готовый архив: [`storyboard/pack/ChibiVT_face_storyboard.zip`](storyboard/pack/ChibiVT_face_storyboard.zip).
+[Лист рта](storyboard/pack/boards/mouth_board.png) · [лист глаз](storyboard/pack/boards/eye_board.png) ·
+[подробности](face_storyboard/README.md).
+
+```bash
+pip install -r requirements-turnaround.txt
+python3 tools/rig.py                        # атлас модели (если ещё не собран)
+python3 tools/build_face_storyboard.py --psd   # пакет раскадровки
+python3 -m unittest discover -s tests -v    # 22 проверки, вкл. JS↔Python блендинг
+python3 tools/serve.py . 8000               # /storyboard/ — интерактивный просмотр
+```
+
+## Ранее: ракурсы полного роста и раскадровка
 
 Добавлен самостоятельный **пакет референсов для подготовки Live2D** — существующая модель `.moc3` не менялась.
 
@@ -147,11 +179,16 @@ tools/moc3gen.py      минималистичный писатель .moc3 (Cub
                       проверен загрузкой в настоящий Cubism Core 4.2.2
 tools/rig.py          подготовка текстуры: маска глаз, инпэйнт, открытый рот
 tools/build_model.py  меши, деформеры, параметры, moc3 + model3/physics/cdi3
+tools/build_face_storyboard.py  раскадровка глаз и рта из тайлов атласа
 tools/validate.py     проверка комплекта (параметры, render order, sweep)
 tools/render.py       офлайн-рендер PNG/ASCII (для проверки без GPU)
 tools/dump_model.js   выгрузка состояния модели через Cubism Core в JSON
 tools/make_kit.py     иконка + README + zip
-preview/              браузерный предпросмотр (WebGL)
+storyboard/           интерактивный просмотрщик раскадровки лица (blend.js —
+                      общий JS-порт блендинга, pack/ — готовый пакет)
+face_storyboard/      описание пакета раскадровки (README)
+turnaround/           ракурсы полного роста: просмотрщик + pack/
+preview/              браузерный предпросмотр (WebGL, нужен Cubism Core)
 dist/ChibiVT/         готовый комплект
 legacy/               файлы первой версии пайплайна (build_mesh/build_moc)
 ```
