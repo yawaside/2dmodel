@@ -1,6 +1,6 @@
 /* Cubism-Core-free live preview.
    Re-implements (in JS) the exact same continuous math tools/build_model.py
-   bakes into ChibiVT.moc3 keyframes: head_warp()/body_warp()/mouth_blend()/
+   bakes into ChibiVT.moc3 keyframes: head_warp()/body_warp()/mouth_deform()/
    eye_blend()/shading ramps. Loads dist/ChibiVT/rig_web.json (mesh topology
    + UVs, exported by build_model.py) and dist/ChibiVT/textures/texture_00.png
    (same atlas the real model uses, shading tiles included). */
@@ -89,22 +89,34 @@ function headXY(px, py, ax, ay, az, bx, by, bz, breath, W, C) {
   return bodyXY(wx, wy, ax, bx, by, bz, breath, W, C);
 }
 
-// mouth_blend / eye_blend / stack_opa ported 1:1 from tools/build_model.py
-function mouthBlend(openY, form) {
-  const w = [0, 0, 0, 0, 0, 0];
-  const o = clamp(openY, 0, 1), f = clamp(form, -1, 1);
-  if (o <= 0.12) w[0] = 1.0;
-  else if (o <= 0.20) { const t = (o - 0.12) / 0.08; w[0] = 1 - t; w[1] = t; }
-  else if (o < 0.38) w[1] = 1.0;
-  else if (o <= 0.47) { const t = (o - 0.38) / 0.09; w[1] = 1 - t; w[2] = t; }
-  else if (o < 0.66) w[2] = 1.0;
-  else if (o <= 0.76) { const t = (o - 0.66) / 0.10; w[2] = 1 - t; w[3] = t; }
-  else w[3] = 1.0;
-  if (f > 0) { for (let i = 0; i < 4; i++) w[i] *= (1 - f); w[4] = f; }
-  else if (f < 0) { const k = -f; for (let i = 0; i < 4; i++) w[i] *= (1 - k); w[5] = k; }
-  const total = w.reduce((a, b) => a + b, 0);
-  if (total > 0) for (let i = 0; i < 6; i++) w[i] /= total; else w[0] = 1;
-  return w;
+// mouth_deform / eye_blend / stack_opa ported 1:1 from tools/build_model.py.
+// The mouth is ONE texture whose mesh is continuously deformed (proportional
+// squash toward the face's own resting mouth-line + a smile/smirk corner
+// curve) instead of cross-fading between several drawn mouths - see
+// mouth_deform() in tools/build_model.py for the full rationale.
+function mouthDeform(px, py, openY, form, box, artBbox, pivot, C) {
+  const [ax0, ay0, ax1, ay1] = artBbox;
+  const [pivotX, pivotY] = pivot;
+  const artPivotX = (ax0 + ax1) / 2, halfW = Math.max(1, (ax1 - ax0) / 2);
+
+  const t = clamp(openY, 0, 1);
+  const easeO = t * t * (3 - 2 * t);
+  const xNorm = clamp((px - artPivotX) / halfW, -1.3, 1.3);
+  const cornerW = 1 - smoothstep(C.mouth_corner_start, C.mouth_corner_end, Math.abs(xNorm));
+
+  const sy = C.mouth_close_y_scale + (1 - C.mouth_close_y_scale) * easeO;
+  const yUniform = pivotY + (py - pivotY) * sy;
+
+  const fp = Math.max(0, form), fm = Math.max(0, -form);
+  const dyCurve = -fp * C.mouth_smile_amp * xNorm * xNorm - fm * C.mouth_smirk_amp * xNorm;
+  const dxCurve = fp * C.mouth_wide_amp * xNorm;
+  const finalY = py + cornerW * ((yUniform - py) + dyCurve);
+
+  const sx = C.mouth_close_x_scale + (1 - C.mouth_close_x_scale) * easeO;
+  const xRaw = pivotX + (px - pivotX) * sx + dxCurve;
+  const finalX = px + cornerW * (xRaw - px);
+
+  return [finalX, finalY];
 }
 function eyeBlend(openVal, smileVal) {
   const w = [0, 0, 0, 0, 0];
@@ -266,7 +278,9 @@ async function init() {
   const C = rig.cfg;
   const REQUIRED_CFG = ['cut_y', 'head_fade', 'head_center', 'neck_point', 'r_yaw', 'r_pitch',
     'yaw_scale', 'pitch_scale', 'roll_scale', 'body_shift_x', 'body_shift_y', 'body_roll_deg',
-    'body_hip', 'shade_yaw_max_deg', 'shade_pitch_max_deg'];
+    'body_hip', 'shade_yaw_max_deg', 'shade_pitch_max_deg', 'mouth_close_y_scale',
+    'mouth_close_x_scale', 'mouth_smile_amp', 'mouth_smirk_amp', 'mouth_wide_amp',
+    'mouth_corner_start', 'mouth_corner_end'];
   const missing = REQUIRED_CFG.filter(k => C[k] === undefined);
   if (missing.length) throw new Error('rig_web.json: cfg missing keys: ' + missing.join(', '));
 
@@ -276,8 +290,9 @@ async function init() {
     pitch_pos: rig.shade.pitch_pos_uv, pitch_neg: rig.shade.pitch_neg_uv,
   }, W);
   const body = makeGroup(rig.body.verts, rig.body.tris, { base: rig.body.uv }, W);
-  const mouthUv = {}; rig.mouth.shapes.forEach((s, i) => { mouthUv['m' + i] = rig.mouth.uvs[i]; });
-  const mouth = makeGroup(rig.mouth.verts, rig.mouth.tris, mouthUv, W);
+  // ONE mouth drawable - its mesh deforms continuously (mouthDeform), no
+  // per-shape UV set/cross-fade any more.
+  const mouth = makeGroup(rig.mouth.verts, rig.mouth.tris, { base: rig.mouth.uv }, W);
   const eyes = rig.eyes.map(e => {
     const uvSets = {}; e.variants.forEach((v, i) => { uvSets[v] = e.uvs[i]; });
     return makeGroup(e.verts, e.tris, uvSets, W);
@@ -374,9 +389,12 @@ async function init() {
     head.draw('pitch_pos', clamp(curAy, 0, pitchMax) / pitchMax);
     head.draw('pitch_neg', clamp(-curAy, 0, pitchMax) / pitchMax);
 
-    mouth.updatePositions(headWarpFn);
-    const mw = mouthBlend(openY, form);
-    for (let i = 0; i < mw.length; i++) mouth.draw('m' + i, stackOpa(mw, i));
+    const mouthWarpFn = (px, py) => {
+      const [dx, dy] = mouthDeform(px, py, openY, form, rig.mouth.box, rig.mouth.art_bbox, rig.mouth.pivot, C);
+      return headWarpFn(dx, dy);
+    };
+    mouth.updatePositions(mouthWarpFn);
+    mouth.draw('base', 1);
 
     const ayNat = clamp(smile + Math.max(0, curAy / 30) * 0.3, 0, 1);
     const ewL = eyeBlend(elOpen, ayNat), ewR = eyeBlend(erOpen, ayNat);

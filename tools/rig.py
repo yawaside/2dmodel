@@ -330,6 +330,12 @@ def build_texture(src_png: str, out_png: str, meta_json: str, geom: dict,
     lum = 0.299 * rgba[..., 0] + 0.587 * rgba[..., 1] + 0.114 * rgba[..., 2]
 
     box_margin = int(cfg.get("box_margin", 8))
+    # the mouth box needs more breathing room than eyes/other boxes: its
+    # mesh deformation (see mouth_deform() in build_model.py) fades the
+    # warp back to identity over the outer rim of the box so the single
+    # mouth drawable always seamlessly tiles - that fade needs a few more
+    # px of plain skin around the drawn lips than a flat crossfade did.
+    mouth_margin = int(cfg.get("mouth_margin", 22))
     tile_pad = int(cfg.get("tile_pad", 4))
     col_gap = int(cfg.get("column_gap", 24))
 
@@ -504,13 +510,15 @@ def build_texture(src_png: str, out_png: str, meta_json: str, geom: dict,
                           "variants": eye_variants})
 
     # ----- mouth detection ------------------------------------------------- #
+    # A single hand-drawn mouth texture (the wide-open shape) is now the ONLY
+    # mouth art used. Every other mouth pose (closed/slight/half/smile/smirk)
+    # used to be a separately drawn PNG that got alpha-crossfaded in/out -
+    # which reads as one photo dissolving into another instead of a lip
+    # actually moving. Now they are all produced by continuously DEFORMING
+    # this one texture's mesh (see mouth_deform() in build_model.py), so
+    # there is exactly one mouth drawable and zero texture swapping.
     mouth_shapes = [
-        ("closed", None),           # neutral from base
-        ("slight", "M_slight_V1.png"),
-        ("half", "M_half_V2.png"),
         ("A_open", "M_A_open_V3.png"),
-        ("smile", "M_I_grin_V5.png"),
-        ("smirk", "M_smirk_V8.png"),
     ]
 
     mx, my = float(geom["mouth"][0]), float(geom["mouth"][1])
@@ -548,14 +556,8 @@ def build_texture(src_png: str, out_png: str, meta_json: str, geom: dict,
             layer_cache[key] = load_layer(variant_file[vname] % side)
         return layer_cache[key]
 
-    # mouth_src[i] = layer for mouth shape i (None -> neutral base crop)
-    igrin = load_layer("M_I_grin_V5.png")
-    mouth_src = [None]
-    for name, fname in mouth_shapes[1:]:
-        if fname is None:
-            mouth_src.append(igrin)                       # smile
-        else:
-            mouth_src.append(load_layer(fname))
+    # mouth_src[i] = layer for mouth shape i (single A_open texture now)
+    mouth_src = [load_layer(fname) for _, fname in mouth_shapes]
 
     # ----- final boxes ------------------------------------------------------ #
     # Eye box: mask rig box UNION full layer art (brows etc.) + margin, but
@@ -577,9 +579,14 @@ def build_texture(src_png: str, out_png: str, meta_json: str, geom: dict,
 
     eye_bottom = max(eb["rig_box"][3] for eb in eye_boxes)
 
+    # tight bbox of the single mouth drawing itself (used by build_model.py
+    # as the pivot/reference frame for the mesh-deformation math - NOT the
+    # padded mouth_box, which also carries margin for the head art around it)
+    mouth_art_bbox = art_bbox(mouth_src[0])
+
     mb = union([art_bbox(a) for a in mouth_src if a is not None] + [mouth_bbox])
-    mouth_box = clamp_box((mb[0] - box_margin, mb[1] - box_margin,
-                           mb[2] + box_margin, mb[3] + box_margin))
+    mouth_box = clamp_box((mb[0] - mouth_margin, mb[1] - mouth_margin,
+                           mb[2] + mouth_margin, mb[3] + mouth_margin))
     # the eye band ends at eye_bottom; the mouth band starts there too
     mouth_box = (mouth_box[0], max(mouth_box[1], eye_bottom),
                  mouth_box[2], mouth_box[3])
@@ -635,6 +642,7 @@ def build_texture(src_png: str, out_png: str, meta_json: str, geom: dict,
                       for eb in eye_boxes],
                 mouth_box=list(mouth_box), mouth_bbox=list(mouth_bbox),
                 mouth_center=(mcx, mcy), mouth_size=(mw, mh),
+                mouth_art_bbox=list(mouth_art_bbox),
                 mouth_shapes=[n for n, _ in mouth_shapes],
                 mouth_frame_count=len(mouth_tiles),
                 placed=placed, lip_rgb=list(map(float, lip_rgb)))

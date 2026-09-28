@@ -76,8 +76,8 @@ CFG = dict(
     angle_z_keys=(-30.0, 0.0, 30.0),
     body_range=(-10.0, 10.0),
     body_keys=(-10.0, 0.0, 10.0),
-    # keys aligned to the blending breakpoints of eye_blend()/mouth_blend()
-    # (0.2/0.5/0.85 and 0.15/0.35/0.55/0.8). The pairs like 0.14/0.15 sit
+    # keys aligned to the blending breakpoints of eye_blend()
+    # (0.2/0.5/0.85). The pairs like 0.14/0.15 sit
     # right before a breakpoint: there the bottom layer of the stack passes
     # the baton to the next one, and a key added just before the hand-over
     # keeps the stack coverage at ~1 between keys (no base leaks through,
@@ -87,9 +87,40 @@ CFG = dict(
     # 0.47 / 0.66 / 0.76) plus one key right before each hand-over (0.19 /
     # 0.46 / 0.75) where the bottom layer passes the baton - keeps base
     # leak ~0 between keys
-    mouth_keys=(0.0, 0.12, 0.19, 0.2, 0.38, 0.46, 0.47, 0.66, 0.75, 0.76, 1.0),
-    mouth_form_keys=(-1.0, -0.9, -0.5, 0.0, 0.5, 0.9, 1.0),
+    # The mouth is now ONE drawable that DEFORMS (see mouth_deform() below)
+    # instead of six drawables cross-fading, so these keys just need to
+    # sample the continuous curve closely enough for the moc3's piecewise-
+    # linear keyform interpolation to look smooth (no hand-over timing to
+    # respect any more).
+    mouth_keys=(0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0),
+    mouth_form_keys=(-1.0, -0.7, -0.4, 0.0, 0.4, 0.7, 1.0),
     eye_smile_keys=(0.0, 0.5, 0.9, 1.0),
+    # ---- mouth mesh deformation (single-texture, no crossfade) ------------
+    # Uniform vertical squash toward the natural resting mouth-line position
+    # (mouth_center in atlas.json): open==1 is identity (matches the drawn
+    # art exactly), open==0 shrinks every row toward that pivot by
+    # mouth_close_y_scale. Because it is a plain proportional scale (not a
+    # squeeze-to-a-fixed-edge), nothing in the texture ever gets stretched -
+    # it just uniformly shrinks, so the drawn teeth/cavity/tongue bands stay
+    # in the same visual proportion to each other while closing, exactly
+    # like the hand-drawn slight/half frames used to look, and the mesh
+    # simply retracts off the head art's margin instead of dragging it
+    # around (the margin around this mouth is NOT blank - the jaw-line
+    # contour and hair reach into it - so it must be pinned, not distorted).
+    mouth_close_y_scale=0.12,
+    mouth_close_x_scale=0.9,
+    # corner-curve amplitudes (px, source-art space) added on top of the
+    # squash for ParamMouthForm - a smile bends both corners up in a
+    # parabola, a smirk tilts the whole line, both on the SAME texture.
+    mouth_smile_amp=15.0,
+    mouth_smirk_amp=13.0,
+    mouth_wide_amp=8.0,
+    # the whole deformation (squash + curve, x and y) fades out toward the
+    # mouth art's own left/right edges (as a fraction of its half-width) -
+    # real mouth corners barely move anyway, and this keeps the jaw-line/
+    # hair that peek into the art bbox's corners from being dragged around.
+    mouth_corner_start=0.55,
+    mouth_corner_end=1.0,
     # pseudo-3D self-shadow / rim-light overlay (see build_shade_textures) ---
     shade_dark_rgb=(24.0, 17.0, 20.0),
     shade_light_rgb=(255.0, 248.0, 226.0),
@@ -135,6 +166,45 @@ def head_warp(px, py, ax, ay, az, cfg=CFG):
     x2 = x1 + (x1 - hcx) * (math.cos(a + psi) / ca - 1.0)
     x3, y3 = rot((x2, y2), cfg["neck_point"], math.radians(az) * cfg["roll_scale"])
     return px + (x3 - px) * w, py + (y3 - py) * w
+
+
+def mouth_deform(px, py, open_y, form, box, art_bbox, pivot, cfg=CFG):
+    """Continuously deform ONE mouth texture instead of cross-fading drawn
+    frames - see the `mouth_*` keys in CFG for what each constant does.
+
+    The mesh is squashed PROPORTIONALLY (a plain scale, never a stretch)
+    toward `pivot` - the face's own natural resting mouth-line position, so
+    a closing mouth shrinks toward exactly where the head art's own (drawn)
+    neutral mouth line already sits, and at t=0 the retracted mesh reveals
+    that line seamlessly (same base pixels the head texture shows there
+    anyway). The whole effect fades out toward the drawn mouth's own left/
+    right edges (`art_bbox`), since that is where hair/jaw-line linework
+    from the rest of the face bleeds into the mouth tile's rectangle.
+    """
+    ax0, ay0, ax1, ay1 = art_bbox
+    pivot_x, pivot_y = pivot
+    art_pivot_x = (ax0 + ax1) / 2.0
+    half_w = max(1.0, (ax1 - ax0) / 2.0)
+
+    t = clamp(open_y, 0.0, 1.0)
+    ease_o = t * t * (3.0 - 2.0 * t)
+    x_norm = clamp((px - art_pivot_x) / half_w, -1.3, 1.3)
+    corner_w = 1.0 - smoothstep(cfg["mouth_corner_start"], cfg["mouth_corner_end"], abs(x_norm))
+
+    sy = cfg["mouth_close_y_scale"] + (1.0 - cfg["mouth_close_y_scale"]) * ease_o
+    y_uniform = pivot_y + (py - pivot_y) * sy
+
+    fp, fm = max(0.0, form), max(0.0, -form)
+    dy_curve = -fp * cfg["mouth_smile_amp"] * x_norm * x_norm \
+        - fm * cfg["mouth_smirk_amp"] * x_norm
+    dx_curve = fp * cfg["mouth_wide_amp"] * x_norm
+    final_y = py + corner_w * ((y_uniform - py) + dy_curve)
+
+    sx = cfg["mouth_close_x_scale"] + (1.0 - cfg["mouth_close_x_scale"]) * ease_o
+    x_raw = pivot_x + (px - pivot_x) * sx + dx_curve
+    final_x = px + corner_w * (x_raw - px)
+
+    return final_x, final_y
 
 
 def body_warp(px, py, bx, by, bz, breath=0.0, cfg=CFG):
@@ -299,72 +369,6 @@ def stack_opa(weights, k):
     return clamp(weights[k] / cum, 0.0, 1.0)
 
 
-def mouth_blend(open_y, form):
-    """Return weights for 6 mouth shapes using open (0-1) and form (-1=smirk, 0=neutral, 1=smile).
-
-    Shape order (matches rig):
-        0: closed
-        1: slight
-        2: half
-        3: A (wide open)
-        4: smile (I-grin)
-        5: smirk
-
-    Fewer frames than before (the O and open-grin steps are gone): the mouth
-    opens as ONE monotonic chain closed -> slight -> half -> A, always with
-    at most two shapes mixed, so lip-sync reads as a smooth continuous
-    opening instead of cycling through several drawn mouths.
-    """
-    w = [0.0] * 6
-    o = clamp(open_y, 0.0, 1.0)
-    f = clamp(form, -1.0, 1.0)
-
-    # openness: LONG holds with SHORT pair crossfades. Most of the parameter
-    # range shows exactly ONE drawn mouth, so the previous frame visibly
-    # disappears during the brief transition instead of hanging around the
-    # new, bigger one. Still piecewise-linear (knots + a key right before
-    # each hand-over), so the stored keyform opacities stay exact.
-    if o <= 0.12:
-        w[0] = 1.0                                  # closed hold
-    elif o <= 0.20:
-        t = (o - 0.12) / 0.08
-        w[0] = 1.0 - t                              # closed -> slight
-        w[1] = t
-    elif o < 0.38:
-        w[1] = 1.0                                  # slight hold
-    elif o <= 0.47:
-        t = (o - 0.38) / 0.09
-        w[1] = 1.0 - t                              # slight -> half
-        w[2] = t
-    elif o < 0.66:
-        w[2] = 1.0                                  # half hold
-    elif o <= 0.76:
-        t = (o - 0.66) / 0.10
-        w[2] = 1.0 - t                              # half -> A
-        w[3] = t
-    else:
-        w[3] = 1.0                                  # A hold (fully open)
-
-    # form: a plain crossfade of the whole chain to smile / smirk
-    if f > 0.0:
-        for i in range(4):
-            w[i] *= (1.0 - f)
-        w[4] = f
-    elif f < 0.0:
-        k = -f
-        for i in range(4):
-            w[i] *= (1.0 - k)
-        w[5] = k
-
-    # normalize (keeps the sum at 1 for the stack compositor)
-    total = sum(w)
-    if total > 0:
-        w = [x / total for x in w]
-    else:
-        w[0] = 1.0
-    return w
-
-
 def eye_blend(open_val, smile_val):
     """Return weights for the 5 eye frames: neutral, half, blink, happy, squint.
 
@@ -505,19 +509,19 @@ def build(geom_path, meta_path, atlas_path, outdir, cfg=CFG):
         eye_meshes.append(dict(id=f"Eye{i}", verts=v, tris=t, uvs=uvs,
                                box=rb, rows=rows, cols=cols, side=i))
 
-    # Mouth mesh: all mouth shapes use identical mesh over mouth box
+    # Mouth mesh: ONE texture (the wide-open drawing), UV fixed, geometry
+    # deformed continuously by mouth_deform() - see CFG["mouth_*"].
     mbox = tuple(meta["mouth_box"])
     mx0, my0, mx1, my1 = mbox
     mw, mh = mx1 - mx0, my1 - my0
-    mrows, mcols = box_rows_cols(mbox, 20)
+    mrows, mcols = box_rows_cols(mbox, 10)
     mv, mt = box_mesh(mbox, mrows, mcols)
-    n_mouth = meta["mouth_frame_count"]
-    muvs = []
-    for i in range(n_mouth):
-        rx0, ry0, rx1, ry1 = meta["placed"][f"mouth_{i}"]["rect"]
-        muvs.append([((rx0 + (rx1 - rx0) * (px - mx0) / mw) / AW,
-                      (ry0 + (ry1 - ry0) * (py - my0) / mh) / AH)
-                     for (px, py) in mv])
+    mouth_art_bbox = tuple(meta["mouth_art_bbox"])
+    mouth_pivot = tuple(meta["mouth_center"])
+    rx0, ry0, rx1, ry1 = meta["placed"]["mouth_0"]["rect"]
+    muv = [((rx0 + (rx1 - rx0) * (px - mx0) / mw) / AW,
+            (ry0 + (ry1 - ry0) * (py - my0) / mh) / AH)
+           for (px, py) in mv]
 
     # ---------------- moc3 --------------------------------------------------- #
     b = ModelBuilder(CANV, CANV, CANV, ORG, ORG)
@@ -615,23 +619,23 @@ def build(geom_path, meta_path, atlas_path, outdir, cfg=CFG):
                        draw_order=250, parent_part=2, parent_deformer=1,
                        params=[pid], opa_fn=make_shade_opa(getter, limit))
 
-    # ---- mouth: alpha-blended storyboard with vowel shapes, controlled by MouthOpenY + MouthForm
-    def make_mouth_opa(i):
+    # ---- mouth: ONE drawable whose MESH deforms continuously with
+    # ParamMouthOpenY / ParamMouthForm (mouth_deform()) - no cross-fading
+    # between separately drawn mouths, so lip-sync reads as one shape
+    # actually moving instead of photos being swapped.
+    def make_mouth_pos():
         def f(st):
             o = st.get("ParamMouthOpenY", 0.0)
             form = st.get("ParamMouthForm", 0.0)
-            w = mouth_blend(o, form)
-            return stack_opa(w, i)
+            return [head_local(*mouth_deform(px, py, o, form, mbox, mouth_art_bbox, mouth_pivot, cfg))
+                    for (px, py) in mv]
         return f
 
-    # All mouth frames are opaque crops of the face; stack_opa() makes the
-    # stack composite to exactly mouth_blend() - no ghosting of the base art.
-    for i in range(n_mouth):
-        b.add_art_mesh(id=f"Mouth{i}", verts=[head_local(*p) for p in mv],
-                       uvs=muvs[i], tris=mt, draw_order=300 + i,
-                       parent_part=3, parent_deformer=1,
-                       params=["ParamMouthOpenY", "ParamMouthForm"],
-                       opa_fn=make_mouth_opa(i))
+    b.add_art_mesh(id="Mouth0", verts=[head_local(*p) for p in mv],
+                   uvs=muv, tris=mt, draw_order=300,
+                   parent_part=3, parent_deformer=1,
+                   params=["ParamMouthOpenY", "ParamMouthForm"],
+                   pos_fn=make_mouth_pos())
 
     # ---- eyes: each eye is a single drawable that switches UVs per variant, alpha blended
     # Actually moc3 doesn't support UV animation in this writer, so use same approach as mouth: one drawable per variant, alpha blended.
@@ -671,8 +675,8 @@ def build(geom_path, meta_path, atlas_path, outdir, cfg=CFG):
     Image.fromarray(atlas.astype(np.uint8)).save(os.path.join(tex_dir, "texture_00.png"))
 
     # ---------------- browser preview rig (no Cubism Core needed) ----------- #
-    # Own light-weight WebGL runtime (tools/webpreview/) evaluates the SAME
-    # head_warp()/body_warp()/mouth_blend()/eye_blend() math continuously in
+    # Own light-weight WebGL runtime (preview/live.js) evaluates the SAME
+    # head_warp()/body_warp()/mouth_deform()/eye_blend() math continuously in
     # JS instead of baking it into moc3 keyframes - this file is its "moc3".
     rig_web = {
         "canvas_px": cfg["canvas_px"],
@@ -683,13 +687,16 @@ def build(geom_path, meta_path, atlas_path, outdir, cfg=CFG):
             "yaw_scale", "pitch_scale", "roll_scale", "body_shift_x",
             "body_shift_y", "body_roll_deg", "body_hip", "angle_range",
             "body_range", "shade_yaw_max_deg", "shade_pitch_max_deg",
+            "mouth_close_y_scale", "mouth_close_x_scale", "mouth_smile_amp",
+            "mouth_smirk_amp", "mouth_wide_amp", "mouth_corner_start", "mouth_corner_end",
         )},
         "head": {"verts": head_verts, "tris": head_tris,
                  "uv": [(p[0] / AW, p[1] / AH) for p in head_verts]},
         "body": {"verts": body_verts, "tris": body_tris,
                  "uv": [(p[0] / AW, p[1] / AH) for p in body_verts]},
-        "mouth": {"verts": mv, "tris": mt, "shapes": meta["mouth_shapes"],
-                  "uvs": muvs, "box": meta["mouth_box"]},
+        "mouth": {"verts": mv, "tris": mt, "uv": muv,
+                  "box": meta["mouth_box"], "art_bbox": meta["mouth_art_bbox"],
+                  "pivot": list(meta["mouth_center"])},
         "eyes": [{"verts": em["verts"], "tris": em["tris"],
                   "variants": variant_names,
                   "uvs": [em["uvs"][v] for v in variant_names]}
@@ -851,7 +858,7 @@ def build(geom_path, meta_path, atlas_path, outdir, cfg=CFG):
     for i in range(2):
         for vname in variant_names:
             eye_drawables.append(f"Eye{i}_{vname}")
-    mouth_drawables = [f"Mouth{i}" for i in range(n_mouth)]
+    mouth_drawables = ["Mouth0"]
 
     cdi = {
         "Version": 3,

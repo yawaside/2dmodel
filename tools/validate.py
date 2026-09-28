@@ -230,43 +230,42 @@ console.log("===JSON===");console.log(JSON.stringify({ids:Array.from(m.parameter
                 return (max(ys) - min(ys)) * 1024
         return 0.0
 
-    # ---- раскадровка рта -------------------------------------------------
+    # ---- рот: единая деформируемая сетка (без смены кадров) ---------------
+    # The mouth is now exactly ONE drawable whose MESH deforms continuously
+    # with ParamMouthOpenY/Form (mouth_deform() in build_model.py) instead
+    # of several drawn frames cross-fading in and out. So the checks here
+    # are: (a) there is exactly one Mouth drawable, (b) it never fades (its
+    # opacity stays ~1 at every state - a real crossfade would dip it), and
+    # (c) its own bounding height actually grows monotonically with
+    # ParamMouthOpenY (proof the geometry itself is moving, not a texture
+    # swap sitting still).
     mframes = sorted([dr['id'] for dr in base['drawables']
                       if dr['id'].startswith('Mouth')])
-    check(len(mframes) >= 3, 'кадры рта: %s' % ', '.join(mframes))
-    print('       эффективные вклады кадров (снизу вверх):')
-    bad = 0
+    check(mframes == ['Mouth0'], 'рот: один-единственный деформируемый меш: %s' % ', '.join(mframes))
+
+    def mouth_op(dump):
+        for d in dump['drawables']:
+            if d['id'] == 'Mouth0':
+                return d['op']
+        return None
+
+    ops = [mouth_op(d) for d in ([base] + dumps)]
+    ops = [o for o in ops if o is not None]
+    check(all(o is not None and o > 0.98 for o in ops),
+          'рот: не гаснет ни при одном состоянии (opacity >= 0.98, нет кросс-фейда): %s'
+          % ', '.join('%.2f' % o for o in ops))
+
+    print('       высота меша рта при разной открытости (должна расти монотонно):')
+    heights = []
     for lbl, idx in (('0.00 (закрыт)', 0), ('0.17', 12), ('0.33', 13),
                      ('0.50', 14), ('0.67', 15), ('1.00 (открыт)', 11)):
-        stack = sorted([d for d in dumps[idx]['drawables']
-                        if d['id'].startswith('Mouth')], key=lambda d: d['ro'])
-        ops = [d['op'] for d in stack]
-        # contribution of layer k = op_k * product(1 - op_j) for layers above;
-        # what is left after everything = weight of the base art underneath
-        eff, above = [], 1.0
-        for op in reversed(ops):
-            eff.append(op * above)
-            above *= (1.0 - op)
-        eff.reverse()
-        total, base_w = sum(eff), above
-        vis = ['%s=%.2f' % (d['id'], e) for d, e in zip(stack, eff) if e > 0.01]
-        print('         MouthOpenY %-14s %s   сумма %.2f, база %.2f'
-              % (lbl, ' '.join(vis), total, base_w))
-        # keyform states must be exact; between keys a small drift is allowed
-        # (the runtime only linearly interpolates the stored opacities)
-        tol = 0.02 if lbl.startswith(('0.00', '1.00')) else 0.15
-        if abs(total - 1.0) > 0.02 or base_w > tol:
-            bad += 1
-    check(bad == 0,
-          'рот: вклады кадров дают исходное состояние, база почти перекрыта '
-          '(сумма = 1.00, утечка в норме)')
-
-    # кадр 0 — это сама картинка: в покое он должен совпадать с исходником
-    check('Mouth0' in mframes, 'первый кадр — нарисованный на модели рот')
-
-    # the closed mouth is the model's own art, so it must still be there
-    check('MouthClosed' not in [dr['id'] for dr in base['drawables']],
-          'закрытый рот — собственная текстура модели (отдельного меша нет)')
+        h = mesh_h(dumps[idx], 'Mouth0')
+        heights.append(h)
+        print('         MouthOpenY %-14s высота %.1f px' % (lbl, h))
+    monotonic = all(heights[i] <= heights[i + 1] + 0.5 for i in range(len(heights) - 1))
+    check(monotonic and heights[-1] > heights[0] * 3,
+          'рот: раскрытие — это движение сетки, а не смена текстуры '
+          '(высота растёт монотонно и заметно: %.1f -> %.1f px)' % (heights[0], heights[-1]))
 
     print('\n' + ('ВСЁ ОК — комплект готов: %s' % d if ok else 'ЕСТЬ ОШИБКИ'))
     return 0 if ok else 1
