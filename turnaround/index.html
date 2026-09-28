@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f5f0">
+  <title>Chibi Studio — ракурсы и раскадровка</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="./" aria-label="Chibi Studio, главная"><span class="brand-icon">c<span>·</span></span> chibi<span class="brand-light">studio</span></a>
+    <div class="breadcrumb">Проекты <span>/</span> <b>Chibi soldier</b> <span class="version">REFERENCE V1</span></div>
+    <a class="outline-button old-preview" href="../preview/">Live2D превью <span aria-hidden="true">↗</span></a>
+  </header>
+  <div class="workspace">
+    <aside class="sidebar">
+      <div class="side-title">РАБОЧЕЕ ПРОСТРАНСТВО</div>
+      <nav aria-label="Разделы проекта">
+        <button class="nav-item active" data-tab="views" aria-current="page"><span data-icon="cube"></span>Ракурсы<span class="nav-count">08</span></button>
+        <button class="nav-item" data-tab="storyboard"><span data-icon="grid"></span>Раскадровка<span class="nav-count">17</span></button>
+        <button class="nav-item" data-tab="prepare"><span data-icon="layers"></span>Подготовка Live2D</button>
+      </nav>
+      <div class="sidebar-rule"></div>
+      <div class="side-title">ПРОЕКТ</div>
+      <div class="project-card"><div class="project-avatar"><img src="pack/frames/01_000_front.png" alt=""></div><div><b>Chibi soldier</b><span>Персонаж · полный рост</span></div></div>
+      <a class="side-link" href="README.md" target="_blank" rel="noopener"><span data-icon="book"></span>Гайд по подготовке ↗</a>
+      <div class="sidebar-bottom">
+        <div class="ready-mark"><span></span>Референсы подготовлены</div>
+        <p>От первого эскиза<br>к живому персонажу.</p>
+        <span class="side-footnote">AI-арт + ручная разметка</span>
+      </div>
+    </aside>
+    <main>
+      <div class="page-heading">
+        <div><div class="eyebrow">CHARACTER DESIGN / 01</div><h1 id="page-title">Персонаж со всех сторон<span>.</span></h1><p id="page-subtitle">Единый набор ракурсов, чтобы следующий шаг в Live2D стал проще.</p></div>
+        <a class="primary-button download-pack" href="pack/ChibiVT_turnaround_pack.zip" download><span data-icon="download"></span>Скачать пакет<span class="file-tag">ZIP</span></a>
+      </div>
+      <div id="error" class="error" role="alert" hidden></div>
+      <noscript><p class="error">Включите JavaScript для переключения кадров. <a href="pack/turnaround_board.png">Открыть готовую раскадровку</a> или <a href="pack/ChibiVT_turnaround_pack.zip">скачать пакет</a>.</p></noscript>
+      <section id="views" class="tab-section">
+        <div class="editor">
+          <div class="canvas-column">
+            <div class="canvas-toolbar">
+              <div class="segmented" role="group" aria-label="Тип референса"><button class="selected" data-mode="body" aria-pressed="true">Полный рост <span>8</span></button><button data-mode="head" aria-pressed="false">Голова <span>9</span></button></div>
+              <div class="canvas-tools"><button class="icon-button" id="grid-toggle" title="Сетка и направляющие" aria-label="Сетка и направляющие" aria-pressed="true"><span data-icon="grid"></span></button><button class="icon-button" id="bg-toggle" title="Сменить фон" aria-label="Сменить фон"><span data-icon="contrast"></span></button><span class="zoom-value">FIT</span></div>
+            </div>
+            <div class="stage show-grid" id="stage">
+              <span class="stage-caption">ORTHOGRAPHIC REFERENCE</span>
+              <span class="canvas-dim" id="canvas-dim">768 × 1024</span>
+              <div class="image-plane" id="image-plane"><img id="onion-image" alt="" aria-hidden="true" hidden><img id="main-image" alt="" hidden><div class="guides"><span class="center-guide"></span><span class="feet-guide"></span></div></div>
+              <div class="stage-frame"><span class="tiny-dot"></span><span id="stage-label">Загружаем референсы…</span></div>
+              <div class="stage-note" id="stage-note">AI-референс</div>
+            </div>
+            <div class="transport">
+              <div class="transport-buttons"><button id="prev" class="icon-button" aria-label="Предыдущий кадр"><span data-icon="prev"></span></button><button id="play" class="play-button" aria-label="Воспроизвести" aria-pressed="false"><span data-icon="play"></span></button><button id="next" class="icon-button" aria-label="Следующий кадр"><span data-icon="next"></span></button></div>
+              <span class="transport-count" id="frame-count">01 <span>/ 08</span></span>
+              <input id="frame-range" type="range" min="0" max="7" value="0" step="1" aria-label="Номер кадра">
+              <label class="speed-label"><select id="speed" aria-label="Скорость воспроизведения"><option value="1000">1 кадр/с</option><option value="500" selected>2 кадра/с</option><option value="250">4 кадра/с</option></select></label>
+            </div>
+          </div>
+          <aside class="inspector">
+            <div class="inspector-heading">ПАРАМЕТРЫ КАДРА <span class="small-dot"></span></div>
+            <h2 id="detail-name">Спереди</h2><div class="angle-value" id="detail-angle">0<span>°</span></div>
+            <div class="detail-badges"><span id="status-badge" class="badge">AI-референс</span><span id="format-badge" class="badge subtle">PNG · RGBA</span></div>
+            <div class="inspector-rule"></div>
+            <dl><div><dt>Холст</dt><dd id="detail-canvas">768 × 1024 px</dd></div><div><dt id="detail-pivot-label">Опорная точка</dt><dd id="detail-pivot">384, 974</dd></div><div><dt>Порядок кадра</dt><dd id="detail-index">01 / 08</dd></div></dl>
+            <div class="inspector-rule"></div>
+            <div class="inspector-heading">ОТОБРАЖЕНИЕ</div>
+            <label class="toggle-row">Предыдущий кадр-подложка<input id="onion-toggle" type="checkbox" role="switch"><span class="switch" aria-hidden="true"></span></label>
+            <p class="micro-text">Для сравнения силуэта и пропорций между соседними ракурсами.</p>
+            <div class="reference-note"><span data-icon="info"></span><p id="detail-note">Спина и нижняя часть — предложенный дизайн. Перед риггингом согласуйте детали экипировки.</p></div>
+            <a class="outline-button frame-download" id="download-frame" href="pack/frames/01_000_front.png" download><span data-icon="download"></span>Скачать этот кадр</a>
+          </aside>
+        </div>
+        <div class="strip-heading"><h2 id="strip-title">Ключевые ракурсы <span>8 кадров</span></h2><span id="strip-hint">Полный оборот · шаг 45°</span></div>
+        <div class="frame-strip" id="frame-strip" aria-label="Выбор кадра"></div>
+        <div class="bottom-notice"><span data-icon="info"></span><p><b>Основа для риггинга, не готовый риг.</b> Кадры 45°, 135° и 270° — зеркальные черновики. Микрофон, платок и подсумки требуют согласования.</p><a href="README.md" target="_blank" rel="noopener">Подробнее ↗</a></div>
+      </section>
+      <section id="storyboard" class="tab-section" hidden>
+        <div class="board-layout">
+          <div class="board-panel"><div class="section-header"><h2>Лист ракурсов</h2><a href="pack/turnaround_board.png" download>PNG ↓</a></div><a href="pack/turnaround_board.png" target="_blank" rel="noopener"><img src="pack/turnaround_board.png" alt="Раскадровка восьми ракурсов полного роста" loading="lazy"></a></div>
+          <div class="board-panel"><div class="section-header"><h2>Ключи головы X / Y</h2><a href="pack/head_board.png" download>PNG ↓</a></div><a href="pack/head_board.png" target="_blank" rel="noopener"><img src="pack/head_board.png" alt="Сетка из девяти целевых поворотов головы" loading="lazy"></a></div>
+        </div>
+        <div class="export-panel"><div><h2>Всё для следующего этапа</h2><p>Листы для печати, покадровая анимация и данные для вашего пайплайна.</p></div><div class="export-links"><a class="outline-button" href="pack/reference_boards.pdf" download>PDF ↓</a><a class="outline-button" href="pack/turnaround.gif" download>GIF ↓</a><a class="outline-button" href="pack/body_sprite_sheet.png" download>Спрайт-лист ↓</a><a class="outline-button" href="pack/storyboard.csv" download>CSV ↓</a><a class="outline-button" href="pack/manifest.json" download>JSON ↓</a><a class="primary-button" href="pack/ChibiVT_turnaround_references.psd" download>PSD референсов ↓</a></div></div>
+        <div class="bottom-notice"><span data-icon="info"></span><p>PSD содержит целые кадры на отдельных слоях, а не нарезку частей тела. Углы головы — приблизительные целевые ключи. GIF показывает опорные кадры, без интерполяции.</p></div>
+      </section>
+      <section id="prepare" class="tab-section" hidden>
+        <div class="prep-banner"><div><span class="eyebrow">ОТ РЕФЕРЕНСА К МОДЕЛИ</span><h2>Сначала детали. Затем движение.</h2><p>Отмечайте подготовленные части чистового PSD. Это план работы — слои не создаются автоматически.</p></div><div class="progress-circle"><b id="progress-number">0%</b><span>подготовлено</span></div></div>
+        <div class="prep-toolbar"><div><h2>Чек-лист слоёв</h2><p id="storage-status">Сохраняется в этом браузере</p></div><button id="export-checklist" class="outline-button"><span data-icon="download"></span>Экспорт JSON</button></div>
+        <div class="checklist-grid" id="checklist"></div>
+        <div class="prep-next"><span class="step-number">ДАЛЕЕ</span><div><h2>Импорт в Cubism Editor</h2><p>Дорисуйте скрытые области, задайте меши и деформеры, затем ключи X/Y, моргание и рот. Для спины и профилей нужны собственные части и переключение видимости, а не растягивание фронта до 180°.</p><a href="README.md" target="_blank" rel="noopener">Полная инструкция по риггингу ↗</a></div></div>
+      </section>
+      <footer><span>CHIBI STUDIO <span class="footer-slash">/</span> REFERENCE WORKSPACE</span><span>Создано для следующего движения.</span></footer>
+    </main>
+  </div>
+</body>
+</html>

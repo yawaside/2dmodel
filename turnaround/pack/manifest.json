@@ -1,0 +1,304 @@
+{
+  "schema_version": 1,
+  "name": "ChibiVT · Turnaround reference pack",
+  "kind": "reference_pack_not_live2d_rig",
+  "canvas": {
+    "width": 768,
+    "height": 1024,
+    "feet_y": 974
+  },
+  "angle_convention": "0 front; 90 profile facing viewer left; 180 back; 270 profile facing viewer right",
+  "provenance": "AI-generated from cutout.png. Full body and rear are proposed designs. Three views are mirrored drafts.",
+  "limitations": [
+    "Not a 3D reconstruction, not a rig-ready separated PSD, and not a 360-degree moc3.",
+    "Asymmetric headset, scarf and pouches need manual consistency cleanup on ALL views.",
+    "Source figures are about 660px tall; 768x1024 exports are upscaled, not newly detailed.",
+    "Head X/Y labels are target keys, not measured or calibrated angles."
+  ],
+  "source_sha256": {
+    "back_views.png": "cdcd6c0881a2c9e32b08e0c4c67d16934cb57e3feea46773ea1a9ddc12d4ee4d",
+    "front_to_side.png": "e7ab2548d8400d9420f3fa64abed93d1602466e034223cd7beee59a4ac6813c8",
+    "head_angles.png": "6bda4bf05111e4376af317fc8405d17e4e7b304594e8c83bf4a17c50f0394bc3"
+  },
+  "frames": [
+    {
+      "id": "front",
+      "angle": 0,
+      "label": "Спереди",
+      "file": "frames/01_000_front.png",
+      "mirrored": false,
+      "source": "front_to_side.png",
+      "source_crop": [
+        42,
+        75,
+        356,
+        750
+      ],
+      "status": "ai_reference",
+      "duration_ms": 500,
+      "pivot": [
+        384,
+        974
+      ]
+    },
+    {
+      "id": "front_left",
+      "angle": 45,
+      "label": "Спереди ¾ · влево",
+      "file": "frames/02_045_front_left.png",
+      "mirrored": true,
+      "source": "front_to_side.png",
+      "source_crop": [
+        539,
+        75,
+        850,
+        750
+      ],
+      "status": "mirror_draft",
+      "duration_ms": 500,
+      "pivot": [
+        384,
+        974
+      ]
+    },
+    {
+      "id": "profile_left",
+      "angle": 90,
+      "label": "Профиль · влево",
+      "file": "frames/03_090_profile_left.png",
+      "mirrored": false,
+      "source": "front_to_side.png",
+      "source_crop": [
+        996,
+        75,
+        1316,
+        750
+      ],
+      "status": "ai_reference",
+      "duration_ms": 500,
+      "pivot": [
+        384,
+        974
+      ]
+    },
+    {
+      "id": "back_left",
+      "angle": 135,
+      "label": "Сзади ¾ · влево",
+      "file": "frames/04_135_back_left.png",
+      "mirrored": true,
+      "source": "back_views.png",
+      "source_crop": [
+        58,
+        75,
+        382,
+        750
+      ],
+      "status": "mirror_draft",
+      "duration_ms": 500,
+      "pivot": [
+        384,
+        974
+      ]
+    },
+    {
+      "id": "back",
+      "angle": 180,
+      "label": "Сзади",
+      "file": "frames/05_180_back.png",
+      "mirrored": false,
+      "source": "back_views.png",
+      "source_crop": [
+        536,
+        75,
+        842,
+        750
+      ],
+      "status": "ai_reference",
+      "duration_ms": 500,
+      "pivot": [
+        384,
+        974
+      ]
+    },
+    {
+      "id": "back_right",
+      "angle": 225,
+      "label": "Сзади ¾ · вправо",
+      "file": "frames/06_225_back_right.png",
+      "mirrored": false,
+      "source": "back_views.png",
+      "source_crop": [
+        58,
+        75,
+        382,
+        750
+      ],
+      "status": "ai_reference",
+      "duration_ms": 500,
+      "pivot": [
+        384,
+        974
+      ]
+    },
+    {
+      "id": "profile_right",
+      "angle": 270,
+      "label": "Профиль · вправо",
+      "file": "frames/07_270_profile_right.png",
+      "mirrored": true,
+      "source": "front_to_side.png",
+      "source_crop": [
+        996,
+        75,
+        1316,
+        750
+      ],
+      "status": "mirror_draft",
+      "duration_ms": 500,
+      "pivot": [
+        384,
+        974
+      ]
+    },
+    {
+      "id": "front_right",
+      "angle": 315,
+      "label": "Спереди ¾ · вправо",
+      "file": "frames/08_315_front_right.png",
+      "mirrored": false,
+      "source": "front_to_side.png",
+      "source_crop": [
+        539,
+        75,
+        850,
+        750
+      ],
+      "status": "ai_reference",
+      "duration_ms": 500,
+      "pivot": [
+        384,
+        974
+      ]
+    }
+  ],
+  "head_frames": [
+    {
+      "id": "head_01",
+      "label": "X -30 / Y +30",
+      "file": "heads/01_x-30_y+30.png",
+      "target_parameters": {
+        "ParamAngleX": -30,
+        "ParamAngleY": 30
+      },
+      "calibrated": false,
+      "background": "opaque"
+    },
+    {
+      "id": "head_02",
+      "label": "X +0 / Y +30",
+      "file": "heads/02_x+0_y+30.png",
+      "target_parameters": {
+        "ParamAngleX": 0,
+        "ParamAngleY": 30
+      },
+      "calibrated": false,
+      "background": "opaque"
+    },
+    {
+      "id": "head_03",
+      "label": "X +30 / Y +30",
+      "file": "heads/03_x+30_y+30.png",
+      "target_parameters": {
+        "ParamAngleX": 30,
+        "ParamAngleY": 30
+      },
+      "calibrated": false,
+      "background": "opaque"
+    },
+    {
+      "id": "head_04",
+      "label": "X -30 / Y +0",
+      "file": "heads/04_x-30_y+0.png",
+      "target_parameters": {
+        "ParamAngleX": -30,
+        "ParamAngleY": 0
+      },
+      "calibrated": false,
+      "background": "opaque"
+    },
+    {
+      "id": "head_05",
+      "label": "X +0 / Y +0",
+      "file": "heads/05_x+0_y+0.png",
+      "target_parameters": {
+        "ParamAngleX": 0,
+        "ParamAngleY": 0
+      },
+      "calibrated": false,
+      "background": "opaque"
+    },
+    {
+      "id": "head_06",
+      "label": "X +30 / Y +0",
+      "file": "heads/06_x+30_y+0.png",
+      "target_parameters": {
+        "ParamAngleX": 30,
+        "ParamAngleY": 0
+      },
+      "calibrated": false,
+      "background": "opaque"
+    },
+    {
+      "id": "head_07",
+      "label": "X -30 / Y -30",
+      "file": "heads/07_x-30_y-30.png",
+      "target_parameters": {
+        "ParamAngleX": -30,
+        "ParamAngleY": -30
+      },
+      "calibrated": false,
+      "background": "opaque"
+    },
+    {
+      "id": "head_08",
+      "label": "X +0 / Y -30",
+      "file": "heads/08_x+0_y-30.png",
+      "target_parameters": {
+        "ParamAngleX": 0,
+        "ParamAngleY": -30
+      },
+      "calibrated": false,
+      "background": "opaque"
+    },
+    {
+      "id": "head_09",
+      "label": "X +30 / Y -30",
+      "file": "heads/09_x+30_y-30.png",
+      "target_parameters": {
+        "ParamAngleX": 30,
+        "ParamAngleY": -30
+      },
+      "calibrated": false,
+      "background": "opaque"
+    }
+  ],
+  "sprite_sheet": {
+    "file": "body_sprite_sheet.png",
+    "columns": 4,
+    "rows": 2,
+    "order": "row-major",
+    "cell": [
+      768,
+      1024
+    ]
+  },
+  "downloads": {
+    "board": "turnaround_board.png",
+    "heads": "head_board.png",
+    "pdf": "reference_boards.pdf",
+    "animation": "turnaround.gif",
+    "zip": "ChibiVT_turnaround_pack.zip",
+    "psd": "ChibiVT_turnaround_references.psd"
+  }
+}
