@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ChibiVT — живое превью (без Cubism Core)</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin:0; font:14px/1.45 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+         background:#15171c; color:#e8eaf0; display:flex; height:100vh; overflow:hidden; }
+  #stage { flex:1; display:flex; align-items:center; justify-content:center; position:relative;
+           background:
+             linear-gradient(45deg,#191c22 25%,transparent 25%,transparent 75%,#191c22 75%),
+             linear-gradient(45deg,#191c22 25%,#12141a 25%,#12141a 75%,#191c22 75%);
+           background-size:32px 32px; background-position:0 0,16px 16px; }
+  canvas { max-width:92%; max-height:92%; border-radius:12px; }
+  #panel { width:340px; padding:16px 18px; box-sizing:border-box; overflow-y:auto;
+           background:#1c1f26; border-left:1px solid #2a2e38; }
+  h1 { font-size:15px; margin:0 0 4px; }
+  h2 { font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:#7d8598; margin:18px 0 8px; }
+  .sub { color:#8b93a7; font-size:12px; margin-bottom:14px; }
+  .row { margin-bottom:9px; }
+  label { display:flex; justify-content:space-between; font-size:12px; color:#aeb6c8; }
+  input[type=range] { width:100%; margin:2px 0 0; }
+  .btns { display:flex; flex-wrap:wrap; gap:6px; margin:8px 0 6px; }
+  button, .toggle { background:#2b3040; color:#e8eaf0; border:1px solid #39405233; border-radius:6px;
+           padding:6px 10px; font-size:12px; cursor:pointer; }
+  button:hover, .toggle:hover { background:#343b4e; }
+  .toggle.on { background:#3a6f4f; border-color:#4f9c6c; }
+  #fps { position:absolute; top:8px; left:10px; color:#5c6478; font-size:11px; }
+  .err { color:#ff8080; white-space:pre-wrap; font-family:ui-monospace,monospace; font-size:11px; margin-top:10px; }
+  .meter { height:8px; border-radius:4px; background:#2a2e38; overflow:hidden; margin-top:4px; }
+  .meter > div { height:100%; width:0%; background:linear-gradient(90deg,#4f9c6c,#e0b84f,#e05656); }
+  .hint { color:#7d8598; font-size:11px; margin-top:14px; }
+  code { color:#c9d1e0; }
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="cv" width="900" height="900"></canvas><div id="fps"></div></div>
+<div id="panel">
+  <h1>ChibiVT — живое превью</h1>
+  <div class="sub" id="status">загрузка…</div>
+
+  <h2>Липсинк с микрофона</h2>
+  <div class="btns">
+    <button id="micBtn" class="toggle">🎤 Включить микрофон</button>
+  </div>
+  <div class="meter"><div id="micMeter"></div></div>
+  <div class="row"><label>Чувствительность <span id="micGainV"></span></label>
+    <input id="micGain" type="range" min="0.5" max="6" step="0.1" value="2.2"></div>
+
+  <h2>Поведение</h2>
+  <div class="btns">
+    <button id="idleBtn" class="toggle on">Авто-движение: вкл</button>
+    <button id="mouseBtn" class="toggle on">Следить за курсором: вкл</button>
+    <button id="blinkBtn">Моргнуть</button>
+    <button id="talkBtn" class="toggle">Демо-речь (без мика)</button>
+  </div>
+
+  <h2>Голова</h2>
+  <div class="row"><label>Поворот X <span id="axV"></span></label><input id="ax" type="range" min="-30" max="30" value="0"></div>
+  <div class="row"><label>Наклон Y <span id="ayV"></span></label><input id="ay" type="range" min="-30" max="30" value="0"></div>
+  <div class="row"><label>Крен Z <span id="azV"></span></label><input id="az" type="range" min="-30" max="30" value="0"></div>
+
+  <h2>Рот</h2>
+  <div class="row"><label>Открытие <span id="moV"></span></label><input id="mo" type="range" min="0" max="1" step="0.01" value="0"></div>
+  <div class="row"><label>Форма (ухмылка↔улыбка) <span id="mfV"></span></label><input id="mf" type="range" min="-1" max="1" step="0.01" value="0"></div>
+
+  <h2>Глаза</h2>
+  <div class="row"><label>Левый открыт <span id="elV"></span></label><input id="el" type="range" min="0" max="1" step="0.01" value="1"></div>
+  <div class="row"><label>Правый открыт <span id="erV"></span></label><input id="er" type="range" min="0" max="1" step="0.01" value="1"></div>
+  <div class="row"><label>Улыбка глаз <span id="esV"></span></label><input id="es" type="range" min="0" max="1" step="0.01" value="0"></div>
+
+  <div class="hint">
+    Это НЕ настоящий Cubism Core (он проприетарный и не может тут лежать) — это
+    собственный WebGL-рендерер, который считает ту же математику деформации
+    головы/тела/рта/глаз и ту же псевдо-3D светотень, что зашиты в реальный
+    <code>ChibiVT.moc3</code>. Итоговый импорт всё равно делайте через
+    <code>dist/ChibiVT_vtube_studio.zip</code> в настоящий VTube Studio.
+  </div>
+  <div id="err" class="err"></div>
+</div>
+<script src="live.js"></script>
+</body>
+</html>

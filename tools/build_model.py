@@ -670,6 +670,41 @@ def build(geom_path, meta_path, atlas_path, outdir, cfg=CFG):
     # not a straight copy of the atlas.png rig.py produced.
     Image.fromarray(atlas.astype(np.uint8)).save(os.path.join(tex_dir, "texture_00.png"))
 
+    # ---------------- browser preview rig (no Cubism Core needed) ----------- #
+    # Own light-weight WebGL runtime (tools/webpreview/) evaluates the SAME
+    # head_warp()/body_warp()/mouth_blend()/eye_blend() math continuously in
+    # JS instead of baking it into moc3 keyframes - this file is its "moc3".
+    rig_web = {
+        "canvas_px": cfg["canvas_px"],
+        "atlas_size": [AW, AH],
+        "texture": "texture_00.png",
+        "cfg": {k: cfg[k] for k in (
+            "cut_y", "head_center", "neck_point", "r_yaw", "r_pitch",
+            "yaw_scale", "pitch_scale", "roll_scale", "body_shift_x",
+            "body_shift_y", "body_roll_deg", "body_hip", "angle_range",
+            "body_range", "shade_yaw_max_deg", "shade_pitch_max_deg",
+        )},
+        "head": {"verts": head_verts, "tris": head_tris,
+                 "uv": [(p[0] / AW, p[1] / AH) for p in head_verts]},
+        "body": {"verts": body_verts, "tris": body_tris,
+                 "uv": [(p[0] / AW, p[1] / AH) for p in body_verts]},
+        "mouth": {"verts": mv, "tris": mt, "shapes": meta["mouth_shapes"],
+                  "uvs": muvs, "box": meta["mouth_box"]},
+        "eyes": [{"verts": em["verts"], "tris": em["tris"],
+                  "variants": variant_names,
+                  "uvs": [em["uvs"][v] for v in variant_names]}
+                 for em in eye_meshes],
+        "shade": {
+            "yaw_pos_uv": [shade_yaw_uv_normal(*p) for p in head_verts],
+            "yaw_neg_uv": [shade_yaw_uv_mirror(*p) for p in head_verts],
+            "pitch_pos_uv": [shade_pitch_uv_mirror(*p) for p in head_verts],
+            "pitch_neg_uv": [shade_pitch_uv_normal(*p) for p in head_verts],
+        },
+    }
+    with open(os.path.join(outdir, "rig_web.json"), "w") as f:
+        json.dump(rig_web, f)
+    print("wrote %s" % os.path.join(outdir, "rig_web.json"))
+
     name = cfg["name"]
     model3 = {
         "Version": 3,
